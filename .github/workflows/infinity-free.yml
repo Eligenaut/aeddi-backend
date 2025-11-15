@@ -1,0 +1,29 @@
+name: Deploy to InfinityFree
+
+# S’exécute manuellement ou lors d’un push sur la branche main
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy via FTP
+    runs-on: ubuntu-latest
+
+    steps:
+      # Étape 1 : Récupérer le code le plus récent depuis GitHub
+      - name: Get latest code
+        uses: actions/checkout@v4
+
+      # Étape 2 : Envoyer le code via FTP
+      - name: Deploy to InfinityFree via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ftpupload.net
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: /htdocs/  # <-- Pour un domaine ajouté (addon domain)
+          timeout: 86400000
+          log-level: standard
