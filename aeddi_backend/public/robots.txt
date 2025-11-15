@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://monsite.onrender.com/sitemap.xml
+
+# Bloquer les dossiers sensibles
+Disallow: /admin/
+Disallow: /api/
+Disallow: /storage/
+Disallow: /vendor/
+Disallow: /node_modules/
