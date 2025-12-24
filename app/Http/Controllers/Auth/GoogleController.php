@@ -93,8 +93,8 @@ class GoogleController extends Controller
             $googleUser = $provider->user();
 
             // Chercher l'utilisateur par google_id ou email
-            $user = User::where('google_id', $googleUser->id)
-                       ->orWhere('email', $googleUser->email)
+            $user = User::Where('email', $googleUser->email)
+                       ->orwhere('google_id', $googleUser->id)
                        ->first();
 
             if (!$user) {
