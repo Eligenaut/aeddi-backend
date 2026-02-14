@@ -11,12 +11,29 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('users', function (Blueprint $table) {
+Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->string('nom')->nullable();
+            $table->string('prenom')->nullable();
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+            $table->string('google_id')->nullable();
+            $table->string('avatar')->nullable();
+            $table->string('role')->nullable();
+            $table->string('sub_role')->nullable();
+            $table->string('etablissement')->nullable();
+            $table->string('parcours')->nullable();
+            $table->string('niveau')->nullable();
+            $table->string('promotion')->nullable();
+            $table->string('logement')->nullable();
+            $table->string('bloc_campus')->nullable();
+            $table->string('quartier')->nullable();
+            $table->string('telephone')->nullable();
+            $table->string('profile_image')->nullable();
+            $table->string('verification_code')->nullable();
+            $table->timestamp('verification_code_expires_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });
