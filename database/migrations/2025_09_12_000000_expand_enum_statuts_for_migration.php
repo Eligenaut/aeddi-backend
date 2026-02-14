@@ -3,30 +3,33 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        // Elargir l'ENUM de activites.statut
+        // activites.statut
         Schema::table('activites', function (Blueprint $table) {
-            $table->enum('statut', [
-                'en_cours', 'terminee', 'en_attente', 'annulee',
-                'planifiee'
-            ])->default('en_cours')->change();
+            $table->string('statut')->default('en_cours')->change();
         });
 
-        // Elargir l'ENUM de activite_membre.statut_participation
+        // Ajouter la contrainte check PostgreSQL
+        DB::statement("ALTER TABLE activites
+            ADD CONSTRAINT check_statut CHECK (statut IN ('en_cours','terminee','en_attente','annulee','planifiee'))");
+
+        // activite_membre.statut_participation
         Schema::table('activite_membre', function (Blueprint $table) {
-            $table->enum('statut_participation', [
-                'en_cours', 'terminee', 'en_attente', 'annulee',
-                'inscrit', 'present', 'absent', 'excuse'
-            ])->default('en_cours')->change();
+            $table->string('statut_participation')->default('en_cours')->change();
         });
+
+        DB::statement("ALTER TABLE activite_membre
+            ADD CONSTRAINT check_statut_participation CHECK (statut_participation IN ('en_cours','terminee','en_attente','annulee','inscrit','present','absent','excuse'))");
     }
 
     public function down(): void
     {
-        // Ne rien faire (on restreindra après migration des données)
+        DB::statement('ALTER TABLE activites DROP CONSTRAINT IF EXISTS check_statut');
+        DB::statement('ALTER TABLE activite_membre DROP CONSTRAINT IF EXISTS check_statut_participation');
     }
 };
