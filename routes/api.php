@@ -10,6 +10,7 @@ use App\Http\Controllers\ActiviteController;
 use App\Http\Controllers\API\ProfileController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\AccueilController;
+use App\Http\Controllers\PermissionController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
@@ -57,6 +58,20 @@ Route::middleware('auth:sanctum')->prefix('cotisations')->group(function () {
     Route::delete('/{id}', [CotisationController::class, 'destroy']);
     Route::put('/{cotisationId}/member/{userId}/status', [CotisationController::class, 'updateMemberStatus']);
     Route::delete('/{cotisationId}/member/{userId}', [CotisationController::class, 'deleteMemberCotisation']);
+});
+
+Route::prefix('permissions')->group(function () {
+    // Ajouter/Mettre à jour les permissions d'un utilisateur
+    Route::post('/user/{userId}', [PermissionController::class, 'addPermission']);
+
+    // Récupérer les permissions d'un utilisateur
+    Route::get('/user/{userId}', [PermissionController::class, 'getPermissions']);
+
+    // Supprimer les permissions d'un utilisateur
+    Route::delete('/user/{userId}', [PermissionController::class, 'deletePermissions']);
+
+    // Vérifier si un utilisateur a une permission
+    Route::get('/user/{userId}/check/{permission}', [PermissionController::class, 'hasPermission']);
 });
 
 // Activités
