@@ -7,9 +7,9 @@ use App\Http\Controllers\Auth\AuthController as AuthAuthController;
 use App\Http\Controllers\MemberController;
 use App\Http\Controllers\CotisationController;
 use App\Http\Controllers\ActiviteController;
-use App\Http\Controllers\RecoveryCodeController;
 use App\Http\Controllers\API\ProfileController;
 use App\Http\Controllers\ExportController;
+use App\Http\Controllers\AccueilController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
@@ -21,10 +21,8 @@ Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthAuthController::class, 'login']);
     Route::post('/logout', [AuthAuthController::class, 'logout'])->middleware('auth:sanctum');
     Route::get('/user', [AuthAuthController::class, 'user'])->middleware('auth:sanctum');
-    Route::post('/verify-email', [AuthController::class, 'verifyEmail']);
+    Route::post('/check-email-allowed', [AuthController::class, 'checkEmailAllowed']);
     Route::post('/create-password', [AuthController::class, 'createPassword']);
-    Route::post('/check-email-allowed', [RecoveryCodeController::class, 'checkEmailAllowed']);
-    Route::post('/resend-verification-code', [AuthController::class, 'resendVerificationCode']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
     Route::get('/test-profile-image', [AuthController::class, 'testProfileImage'])->middleware('auth:sanctum');
@@ -71,13 +69,18 @@ Route::middleware('auth:sanctum')->prefix('activites')->group(function () {
     Route::put('/{activiteId}/member/{userId}/participation', [ActiviteController::class, 'updateMemberParticipation']);
 });
 
+Route::prefix('accueil')->group(function () {
+    Route::get('/activites', [AccueilController::class, 'activites']);
+    Route::get('/bureau',    [AccueilController::class, 'bureau']);
+});
+
 // Administration
 Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
-    Route::post('/add-authorized-email', [RecoveryCodeController::class, 'addAuthorizedEmail']);
-    Route::get('/authorized-emails', [RecoveryCodeController::class, 'getAuthorizedEmails']);
-    Route::delete('/delete-authorized-email/{id}', [RecoveryCodeController::class, 'deleteAuthorizedEmail']);
-    Route::post('/clean-expired-codes', [RecoveryCodeController::class, 'cleanExpiredCodes']);
+    Route::post('/add-authorized-email', [AuthController::class, 'addAuthorizedEmail']);
+    Route::get('/authorized-emails', [AuthController::class, 'getAuthorizedEmails']);
+    Route::delete('/delete-authorized-email/{id}', [AuthController::class, 'deleteAuthorizedEmail']);
 });
-Route::get('/api/test', function() {
+
+Route::get('/api/test', function () {
     return ['status' => 'OK'];
 });

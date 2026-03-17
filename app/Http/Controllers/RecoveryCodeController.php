@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
+use App\Models\AuthorizedEmail;
+use Illuminate\Support\Facades\Log;
 
 class RecoveryCodeController extends Controller
 {
@@ -15,11 +17,15 @@ class RecoveryCodeController extends Controller
      */
     public function addAuthorizedEmail(Request $request): JsonResponse
     {
+        Log::info('addAuthorizedEmail called', ['email' => $request->email]);
+
+        // Validation manuelle de l'unicité sur meta_value
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|unique:recovery_codes,email'
+            'email' => 'required|email'
         ]);
 
         if ($validator->fails()) {
+            Log::warning('Validation failed', ['errors' => $validator->errors()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Données invalides',
@@ -27,21 +33,49 @@ class RecoveryCodeController extends Controller
             ], 422);
         }
 
+        // Vérifier si l'email existe déjà
+        $exists = AuthorizedEmail::where('meta_key', 'email')
+            ->where('meta_value', $request->email)
+            ->exists();
+
+        Log::info('Email exists check', ['exists' => $exists]);
+
+        if ($exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cet email est déjà autorisé'
+            ], 422);
+        }
+
         try {
-            $recoveryCode = RecoveryCode::createCodeForEmail(
-                $request->email,
-                auth()->id()
-            );
+            Log::info('Attempting to create AuthorizedEmail', [
+                'user_id'    => auth('sanctum')->id(),
+                'meta_key'   => 'email',
+                'meta_value' => $request->email
+            ]);
+
+            AuthorizedEmail::create([
+                'user_id'    => auth('sanctum')->id(),
+                'meta_key'   => 'email',
+                'meta_value' => $request->email
+            ]);
+
+            Log::info('AuthorizedEmail created successfully');
 
             return response()->json([
                 'success' => true,
-                'message' => 'Email ajouté avec succès',
-                'code' => $recoveryCode->code
+                'message' => 'Email ajouté avec succès'
             ]);
         } catch (\Exception $e) {
+            Log::error('Error creating AuthorizedEmail', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de l\'ajout de l\'email'
+                'message' => "Erreur lors de l'ajout de l'email",
+                'error'   => $e->getMessage()
             ], 500);
         }
     }

@@ -12,12 +12,15 @@ class Activite extends Model
         'description',
         'date_debut',
         'date_fin',
-        'statut'
+        'statut',
+        'lieu',
+        'categorie',
+        'image',
     ];
 
     protected $casts = [
         'date_debut' => 'date',
-        'date_fin' => 'date'
+        'date_fin'   => 'date',
     ];
 
     /**
