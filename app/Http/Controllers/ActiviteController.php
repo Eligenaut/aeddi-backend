@@ -3,9 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Activite;
-use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class ActiviteController extends Controller
@@ -15,38 +13,28 @@ class ActiviteController extends Controller
      */
     public function index()
     {
-        $activites = Activite::with('membres')->orderBy('date_debut', 'desc')->get();
+        $activites = Activite::with('metas')->orderBy('created_at', 'desc')->get();
 
-        $activitesData = $activites->map(function ($activite) {
-            $totalMembres = $activite->membres->count();
-            $enCours      = $activite->membres->where('pivot.statut_participation', 'en_cours')->count();
-            $terminees    = $activite->membres->where('pivot.statut_participation', 'terminee')->count();
-            $enAttente    = $activite->membres->where('pivot.statut_participation', 'en_attente')->count();
-            $annulees     = $activite->membres->where('pivot.statut_participation', 'annulee')->count();
-
+        $data = $activites->map(function ($activite) {
             return [
-                'id'               => $activite->id,
-                'nom'              => $activite->nom,
-                'description'      => $activite->description,
-                'date_debut'       => $activite->date_debut,
-                'date_fin'         => $activite->date_fin,
-                'statut'           => $activite->statut,
-                'lieu'             => $activite->lieu,
-                'categorie'        => $activite->categorie,
-                'image'            => $activite->image
-                                        ? asset('storage/' . $activite->image)
-                                        : null,
-                'total_membres'    => $totalMembres,
-                'membres_en_cours' => $enCours,
-                'membres_terminees'=> $terminees,
-                'membres_en_attente'=> $enAttente,
-                'membres_annulees' => $annulees,
+                'id'          => $activite->id,
+                'statut'      => $activite->statut,
+                'nom'         => $activite->getMeta('nom'),
+                'description' => $activite->getMeta('description'),
+                'date_debut'  => $activite->getMeta('date_debut'),
+                'date_fin'    => $activite->getMeta('date_fin'),
+                'lieu'        => $activite->getMeta('lieu'),
+                'categorie'   => $activite->getMeta('categorie'),
+                'image'       => $activite->getMeta('image')
+                                    ? asset('storage/' . $activite->getMeta('image'))
+                                    : null,
+                'created_at'  => $activite->created_at,
             ];
         });
 
         return response()->json([
             'success' => true,
-            'data'    => $activitesData
+            'data'    => $data
         ]);
     }
 
@@ -67,7 +55,9 @@ class ActiviteController extends Controller
         ]);
 
         try {
-            DB::beginTransaction();
+            $activite = Activite::create([
+                'statut' => $request->statut,
+            ]);
 
             // Upload image si présente
             $imagePath = null;
@@ -75,38 +65,33 @@ class ActiviteController extends Controller
                 $imagePath = $request->file('image')->store('activites', 'public');
             }
 
-            $activite = Activite::create([
+            $activite->setMetas([
                 'nom'         => $request->nom,
                 'description' => $request->description,
                 'date_debut'  => $request->date_debut,
                 'date_fin'    => $request->date_fin,
-                'statut'      => $request->statut,
                 'lieu'        => $request->lieu,
                 'categorie'   => $request->categorie ?? 'Autre',
                 'image'       => $imagePath,
             ]);
 
-            // Associer à tous les membres (sauf admin)
-            $membres = User::where('email', '!=', 'admin@aeddi.com')->get();
-            foreach ($membres as $membre) {
-                $activite->membres()->attach($membre->id, [
-                    'statut_participation' => 'en_cours',
-                    'created_at'           => now(),
-                    'updated_at'           => now(),
-                ]);
-            }
-
-            DB::commit();
-
             return response()->json([
                 'success' => true,
-                'message' => 'Activité créée et associée à tous les membres avec succès',
-                'data'    => array_merge($activite->toArray(), [
-                    'image' => $imagePath ? asset('storage/' . $imagePath) : null,
-                ]),
-            ]);
+                'message' => 'Activité créée avec succès',
+                'data'    => [
+                    'id'          => $activite->id,
+                    'statut'      => $activite->statut,
+                    'nom'         => $activite->getMeta('nom'),
+                    'description' => $activite->getMeta('description'),
+                    'date_debut'  => $activite->getMeta('date_debut'),
+                    'date_fin'    => $activite->getMeta('date_fin'),
+                    'lieu'        => $activite->getMeta('lieu'),
+                    'categorie'   => $activite->getMeta('categorie'),
+                    'image'       => $imagePath ? asset('storage/' . $imagePath) : null,
+                ]
+            ], 201);
+
         } catch (\Exception $e) {
-            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la création de l\'activité',
@@ -120,7 +105,7 @@ class ActiviteController extends Controller
      */
     public function show($id)
     {
-        $activite = Activite::with('membres')->find($id);
+        $activite = Activite::with('metas')->find($id);
 
         if (!$activite) {
             return response()->json([
@@ -131,9 +116,20 @@ class ActiviteController extends Controller
 
         return response()->json([
             'success' => true,
-            'data'    => array_merge($activite->toArray(), [
-                'image' => $activite->image ? asset('storage/' . $activite->image) : null,
-            ]),
+            'data'    => [
+                'id'          => $activite->id,
+                'statut'      => $activite->statut,
+                'nom'         => $activite->getMeta('nom'),
+                'description' => $activite->getMeta('description'),
+                'date_debut'  => $activite->getMeta('date_debut'),
+                'date_fin'    => $activite->getMeta('date_fin'),
+                'lieu'        => $activite->getMeta('lieu'),
+                'categorie'   => $activite->getMeta('categorie'),
+                'image'       => $activite->getMeta('image')
+                                    ? asset('storage/' . $activite->getMeta('image'))
+                                    : null,
+                'created_at'  => $activite->created_at,
+            ]
         ]);
     }
 
@@ -142,7 +138,7 @@ class ActiviteController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $activite = Activite::find($id);
+        $activite = Activite::with('metas')->find($id);
 
         if (!$activite) {
             return response()->json([
@@ -162,25 +158,45 @@ class ActiviteController extends Controller
             'image'       => 'nullable|image|mimes:jpeg,png,webp|max:2048',
         ]);
 
-        // Upload nouvelle image et suppression de l'ancienne
-        if ($request->hasFile('image')) {
-            if ($activite->image) {
-                Storage::disk('public')->delete($activite->image);
-            }
-            $activite->image = $request->file('image')->store('activites', 'public');
+        // Mettre à jour le statut si fourni
+        if ($request->has('statut')) {
+            $activite->update(['statut' => $request->statut]);
         }
 
-        $activite->fill($request->only([
-            'nom', 'description', 'date_debut', 'date_fin', 'statut', 'lieu', 'categorie'
-        ]));
-        $activite->save();
+        // Upload nouvelle image et suppression de l'ancienne
+        if ($request->hasFile('image')) {
+            $ancienneImage = $activite->getMeta('image');
+            if ($ancienneImage) {
+                Storage::disk('public')->delete($ancienneImage);
+            }
+            $activite->setMeta('image', $request->file('image')->store('activites', 'public'));
+        }
+
+        // Mettre à jour les metas envoyées
+        $metas = $request->only(['nom', 'description', 'date_debut', 'date_fin', 'lieu', 'categorie']);
+        if (!empty($metas)) {
+            $activite->setMetas($metas);
+        }
+
+        // Recharger les metas
+        $activite->load('metas');
 
         return response()->json([
             'success' => true,
             'message' => 'Activité mise à jour avec succès',
-            'data'    => array_merge($activite->toArray(), [
-                'image' => $activite->image ? asset('storage/' . $activite->image) : null,
-            ]),
+            'data'    => [
+                'id'          => $activite->id,
+                'statut'      => $activite->statut,
+                'nom'         => $activite->getMeta('nom'),
+                'description' => $activite->getMeta('description'),
+                'date_debut'  => $activite->getMeta('date_debut'),
+                'date_fin'    => $activite->getMeta('date_fin'),
+                'lieu'        => $activite->getMeta('lieu'),
+                'categorie'   => $activite->getMeta('categorie'),
+                'image'       => $activite->getMeta('image')
+                                    ? asset('storage/' . $activite->getMeta('image'))
+                                    : null,
+            ]
         ]);
     }
 
@@ -189,7 +205,7 @@ class ActiviteController extends Controller
      */
     public function destroy($id)
     {
-        $activite = Activite::find($id);
+        $activite = Activite::with('metas')->find($id);
 
         if (!$activite) {
             return response()->json([
@@ -199,60 +215,17 @@ class ActiviteController extends Controller
         }
 
         // Supprimer l'image associée
-        if ($activite->image) {
-            Storage::disk('public')->delete($activite->image);
+        $image = $activite->getMeta('image');
+        if ($image) {
+            Storage::disk('public')->delete($image);
         }
 
+        // Les metas sont supprimées automatiquement via onDelete('cascade')
         $activite->delete();
 
         return response()->json([
             'success' => true,
             'message' => 'Activité supprimée avec succès'
-        ]);
-    }
-
-    /**
-     * Mettre à jour le statut de participation d'un membre
-     */
-    public function updateMemberParticipation(Request $request, $activiteId, $userId)
-    {
-        $request->validate([
-            'statut_participation' => 'required|in:en_cours,terminee,en_attente,annulee',
-            'commentaire'          => 'nullable|string'
-        ]);
-
-        $activite = Activite::find($activiteId);
-        if (!$activite) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Activité non trouvée'
-            ], 404);
-        }
-
-        $membre = User::find($userId);
-        if (!$membre) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Membre non trouvé'
-            ], 404);
-        }
-
-        if (!$activite->membres()->where('user_id', $userId)->exists()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Ce membre n\'est pas associé à cette activité'
-            ], 400);
-        }
-
-        $activite->membres()->updateExistingPivot($userId, [
-            'statut_participation' => $request->statut_participation,
-            'commentaire'          => $request->commentaire,
-            'updated_at'           => now()
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Statut de participation mis à jour avec succès'
         ]);
     }
 }

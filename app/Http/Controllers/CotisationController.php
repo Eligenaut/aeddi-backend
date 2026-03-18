@@ -3,89 +3,82 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cotisation;
-use App\Models\CotisationMembre;
-use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class CotisationController extends Controller
 {
     /**
-     * Afficher toutes les cotisations (pour l'admin)
+     * Afficher toutes les cotisations
      */
     public function index()
     {
-        $cotisations = Cotisation::with('cotisationMembres')->get();
+        $cotisations = Cotisation::with('metas')->orderBy('created_at', 'desc')->get();
 
-        $cotisationsData = $cotisations->map(function ($cotisation) {
-            $total = $cotisation->cotisationMembres->count();
-            $paye = $cotisation->cotisationMembres->where('statut', 'paye')->count();
-            $non_paye = $cotisation->cotisationMembres->whereIn('statut', ['non_paye', 'reste'])->count();
+        $data = $cotisations->map(function ($cotisation) {
             return [
-                'id' => $cotisation->id,
-                'nom' => $cotisation->nom,
-                'description' => $cotisation->description,
-                'montant' => $cotisation->montant,
-                'date_debut' => $cotisation->date_debut,
-                'date_fin' => $cotisation->date_fin,
-                'statut' => $cotisation->statut,
-                'total_membres' => $total,
-                'membres_payes' => $paye,
-                'membres_non_payes' => $non_paye,
+                'id'          => $cotisation->id,
+                'statut'      => $cotisation->statut,
+                'nom'         => $cotisation->getMeta('nom'),
+                'description' => $cotisation->getMeta('description'),
+                'montant'     => $cotisation->getMeta('montant'),
+                'date_debut'  => $cotisation->getMeta('date_debut'),
+                'date_fin'    => $cotisation->getMeta('date_fin'),
+                'created_at'  => $cotisation->created_at,
             ];
         });
 
         return response()->json([
             'success' => true,
-            'data' => $cotisationsData
+            'data'    => $data
         ]);
     }
 
     /**
-     * Créer une nouvelle cotisation (admin seulement)
+     * Créer une nouvelle cotisation
      */
     public function store(Request $request)
     {
         $request->validate([
-            'nom' => 'required|string|max:255',
+            'nom'         => 'required|string|max:255',
             'description' => 'required|string',
-            'montant' => 'required|numeric|min:0',
-            'date_debut' => 'required|date',
-            'date_fin' => 'required|date|after:date_debut',
-            'statut' => 'in:active,terminee,annulee,en_preparation'
+            'montant'     => 'required|numeric|min:0',
+            'date_debut'  => 'required|date',
+            'date_fin'    => 'required|date|after:date_debut',
+            'statut'      => 'in:active,terminee,annulee,en_preparation',
         ]);
 
-        DB::beginTransaction();
         try {
-            // Créer la cotisation
-            $cotisation = Cotisation::create($request->all());
+            $cotisation = Cotisation::create([
+                'statut' => $request->statut ?? 'en_preparation',
+            ]);
 
-            // Dispatcher la cotisation à tous les membres (sauf admin)
-            $membres = User::where('email', '!=', 'admin@aeddi.com')->get();
-            
-            foreach ($membres as $membre) {
-                CotisationMembre::create([
-                    'user_id' => $membre->id,
-                    'cotisation_id' => $cotisation->id,
-                    'statut' => 'non_paye',
-                    'montant_restant' => $cotisation->montant
-                ]);
-            }
-
-            DB::commit();
+            $cotisation->setMetas([
+                'nom'         => $request->nom,
+                'description' => $request->description,
+                'montant'     => $request->montant,
+                'date_debut'  => $request->date_debut,
+                'date_fin'    => $request->date_fin,
+            ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Cotisation créée et dispatchée avec succès',
-                'data' => $cotisation->load('cotisationMembres')
+                'message' => 'Cotisation créée avec succès',
+                'data'    => [
+                    'id'          => $cotisation->id,
+                    'statut'      => $cotisation->statut,
+                    'nom'         => $cotisation->getMeta('nom'),
+                    'description' => $cotisation->getMeta('description'),
+                    'montant'     => $cotisation->getMeta('montant'),
+                    'date_debut'  => $cotisation->getMeta('date_debut'),
+                    'date_fin'    => $cotisation->getMeta('date_fin'),
+                ]
             ], 201);
 
         } catch (\Exception $e) {
-            DB::rollback();
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la création de la cotisation',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
@@ -95,7 +88,7 @@ class CotisationController extends Controller
      */
     public function show($id)
     {
-        $cotisation = Cotisation::with(['cotisationMembres.user'])->find($id);
+        $cotisation = Cotisation::with('metas')->find($id);
 
         if (!$cotisation) {
             return response()->json([
@@ -106,16 +99,25 @@ class CotisationController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $cotisation
+            'data'    => [
+                'id'          => $cotisation->id,
+                'statut'      => $cotisation->statut,
+                'nom'         => $cotisation->getMeta('nom'),
+                'description' => $cotisation->getMeta('description'),
+                'montant'     => $cotisation->getMeta('montant'),
+                'date_debut'  => $cotisation->getMeta('date_debut'),
+                'date_fin'    => $cotisation->getMeta('date_fin'),
+                'created_at'  => $cotisation->created_at,
+            ]
         ]);
     }
 
     /**
-     * Mettre à jour une cotisation (admin seulement)
+     * Mettre à jour une cotisation
      */
     public function update(Request $request, $id)
     {
-        $cotisation = Cotisation::find($id);
+        $cotisation = Cotisation::with('metas')->find($id);
 
         if (!$cotisation) {
             return response()->json([
@@ -125,25 +127,45 @@ class CotisationController extends Controller
         }
 
         $request->validate([
-            'nom' => 'sometimes|string|max:255',
+            'nom'         => 'sometimes|string|max:255',
             'description' => 'sometimes|string',
-            'montant' => 'sometimes|numeric|min:0',
-            'date_debut' => 'sometimes|date',
-            'date_fin' => 'sometimes|date|after:date_debut',
-            'statut' => 'sometimes|in:active,terminee,annulee,en_preparation'
+            'montant'     => 'sometimes|numeric|min:0',
+            'date_debut'  => 'sometimes|date',
+            'date_fin'    => 'sometimes|date|after:date_debut',
+            'statut'      => 'sometimes|in:active,terminee,annulee,en_preparation',
         ]);
 
-        $cotisation->update($request->all());
+        // Mettre à jour le statut si fourni
+        if ($request->has('statut')) {
+            $cotisation->update(['statut' => $request->statut]);
+        }
+
+        // Mettre à jour les metas envoyées
+        $metas = $request->only(['nom', 'description', 'montant', 'date_debut', 'date_fin']);
+        if (!empty($metas)) {
+            $cotisation->setMetas($metas);
+        }
+
+        // Recharger les metas
+        $cotisation->load('metas');
 
         return response()->json([
             'success' => true,
             'message' => 'Cotisation mise à jour avec succès',
-            'data' => $cotisation
+            'data'    => [
+                'id'          => $cotisation->id,
+                'statut'      => $cotisation->statut,
+                'nom'         => $cotisation->getMeta('nom'),
+                'description' => $cotisation->getMeta('description'),
+                'montant'     => $cotisation->getMeta('montant'),
+                'date_debut'  => $cotisation->getMeta('date_debut'),
+                'date_fin'    => $cotisation->getMeta('date_fin'),
+            ]
         ]);
     }
 
     /**
-     * Supprimer une cotisation (admin seulement)
+     * Supprimer une cotisation
      */
     public function destroy($id)
     {
@@ -161,127 +183,6 @@ class CotisationController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Cotisation supprimée avec succès'
-        ]);
-    }
-
-    /**
-     * Mettre à jour le statut de cotisation d'un membre
-     */
-    public function updateMemberStatus(Request $request, $cotisationId, $userId)
-    {
-        $request->validate([
-            'statut' => 'required|in:non_paye,paye,reste',
-            'montant_restant' => 'nullable|numeric|min:0'
-        ]);
-
-        $cotisationMembre = CotisationMembre::where('cotisation_id', $cotisationId)
-                                          ->where('user_id', $userId)
-                                          ->first();
-
-        if (!$cotisationMembre) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cotisation membre non trouvée'
-            ], 404);
-        }
-
-        $cotisationMembre->update([
-            'statut' => $request->statut,
-            'montant_restant' => $request->montant_restant
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Statut mis à jour avec succès',
-            'data' => $cotisationMembre
-        ]);
-    }
-
-    /**
-     * Obtenir les cotisations du membre connecté
-     */
-    public function getMyCotisations(Request $request)
-    {
-        $user = $request->user();
-        
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Utilisateur non authentifié'
-            ], 401);
-        }
-        $cotisations = CotisationMembre::with('cotisation')
-            ->where('user_id', $user->id)
-            ->get();
-
-        // Statistiques demandées côté membre
-        $total_cotisations = $cotisations->count();
-        $total_paye = $cotisations->where('statut', 'paye')->count();
-        $total_non_paye = $cotisations->whereIn('statut', ['non_paye', 'reste'])->count();
-        $montant_total_restant = $cotisations->whereIn('statut', ['non_paye', 'reste'])->sum('montant_restant');
-
-        $cotisationsData = $cotisations->map(function ($cotisationMembre) {
-            return [
-                'id' => $cotisationMembre->cotisation->id,
-                'nom' => $cotisationMembre->cotisation->nom,
-                'description' => $cotisationMembre->cotisation->description,
-                'montant' => $cotisationMembre->cotisation->montant,
-                'date_debut' => $cotisationMembre->cotisation->date_debut,
-                'date_fin' => $cotisationMembre->cotisation->date_fin,
-                'statut' => $cotisationMembre->cotisation->statut,
-                'statut_paiement' => $cotisationMembre->statut,
-                'montant_restant' => $cotisationMembre->montant_restant
-            ];
-        });
-
-        return response()->json([
-            'success' => true,
-            'data' => $cotisationsData,
-            'stats' => [
-                'total_cotisations' => $total_cotisations,
-                'total_paye' => $total_paye,
-                'total_non_paye' => $total_non_paye,
-                'montant_total_restant' => $montant_total_restant
-            ]
-        ]);
-    }
-
-    /**
-     * Obtenir les cotisations d'un membre
-     */
-    public function getMemberCotisations($userId)
-    {
-        $cotisations = CotisationMembre::with('cotisation')
-                                     ->where('user_id', $userId)
-                                     ->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => $cotisations
-        ]);
-    }
-
-    /**
-     * Supprimer une cotisation associée à un membre
-     */
-    public function deleteMemberCotisation($cotisationId, $userId)
-    {
-        $cotisationMembre = CotisationMembre::where('cotisation_id', $cotisationId)
-            ->where('user_id', $userId)
-            ->first();
-
-        if (!$cotisationMembre) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Cotisation membre non trouvée'
-            ], 404);
-        }
-
-        $cotisationMembre->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Cotisation supprimée pour ce membre'
         ]);
     }
 }
