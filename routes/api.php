@@ -56,9 +56,12 @@ Route::middleware('auth:sanctum')->prefix('cotisations')->group(function () {
     Route::delete('/{cotisationId}/member/{userId}', [CotisationController::class, 'deleteMemberCotisation']);
 });
 
-//Permissions
+
+//Permission
 Route::prefix('permissions')->group(function () {
     Route::post('/add', [PermissionController::class, 'addPermission']);
+    Route::get('/get', [PermissionController::class, 'getRolePermissions']);
+    Route::post('/reset', [PermissionController::class, 'resetPermissions']);
 });
 
 // Activités

@@ -48,18 +48,23 @@ class PermissionController extends Controller
         'create_parametre'
     ];
 
+    // ✅ Permissions par défaut explicites
+    private const DEFAULT_PERMISSIONS = [
+        'show_activite',
+        'show_cotisation',
+        'show_membre',
+        'show_parametre',
+    ];
+
     // ✅ POST /permissions/add
-    // Définir les permissions pour un role/subRole dans role_permissions
-    // ET les appliquer à tous les utilisateurs qui ont ce role/subRole
     public function addPermission(Request $request): JsonResponse
     {
         try {
             $validator = Validator::make($request->all(), [
                 'role'          => 'required|string|in:' . implode(',', self::VALID_ROLES),
-                'subRoles'      => 'nullable|array',
-                'subRoles.*'    => 'string|in:' . implode(',', self::VALID_SUB_ROLES),
-                'permissions'   => 'required|array',
-                'permissions.*' => 'string|in:' . implode(',', self::VALID_PERMISSIONS)
+                'subRole'       => 'nullable|string|in:' . implode(',', self::VALID_SUB_ROLES),
+                'permissions'   => 'present|array',
+                'permissions.*' => 'string|in:' . implode(',', self::VALID_PERMISSIONS),
             ]);
 
             if ($validator->fails()) {
@@ -72,34 +77,27 @@ class PermissionController extends Controller
 
             $validated   = $validator->validated();
             $role        = $validated['role'];
-            $subRoles    = $role === 'BUREAU' ? ($validated['subRoles'] ?? []) : [null];
+            $subRole     = $validated['subRole'] ?? null;
             $permissions = array_unique($validated['permissions']);
 
-            $usersUpdated = 0;
+            // ✅ Sauvegarder dans role_permissions
+            RolePermission::updateOrCreate(
+                ['role' => $role, 'sub_role' => $subRole],
+                ['permissions' => $permissions]
+            );
 
-            foreach ($subRoles as $subRole) {
+            // ✅ Appliquer aux utilisateurs concernés
+            if ($role === 'MEMBER') {
+                $users = User::where('role', 'MEMBER')->get();
+            } else {
+                $users = User::where('role', $role)
+                    ->whereJsonContains('sub_role', $subRole)
+                    ->get();
+            }
 
-                // ✅ Sauvegarder dans role_permissions
-                RolePermission::updateOrCreate(
-                    ['role' => $role, 'sub_role' => $subRole],
-                    ['permissions' => $permissions]
-                );
-
-                // ✅ Appliquer à tous les utilisateurs qui ont ce role/subRole
-                if ($role === 'MEMBER') {
-                    $users = User::where('role', 'MEMBER')->get();
-                } else {
-                    $users = User::where('role', $role)
-                        ->whereJsonContains('sub_role', $subRole)
-                        ->get();
-                }
-
-                foreach ($users as $user) {
-                    /** @var User $user */
-                    $user->setMeta('permissions', json_encode($permissions));
-                }
-
-                $usersUpdated += $users->count();
+            foreach ($users as $user) {
+                /** @var User $user */
+                $user->setMeta('permissions', json_encode($permissions));
             }
 
             return response()->json([
@@ -107,11 +105,12 @@ class PermissionController extends Controller
                 'message' => 'Permissions définies et appliquées avec succès',
                 'data' => [
                     'role'          => $role,
-                    'subRoles'      => $subRoles,
+                    'subRole'       => $subRole,
                     'permissions'   => $permissions,
-                    'users_updated' => $usersUpdated,
+                    'users_updated' => $users->count(),
                 ]
             ], 200);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -121,23 +120,96 @@ class PermissionController extends Controller
         }
     }
 
-    // Récupérer les permissions d'un role/subRole
+    // ✅ POST /permissions/reset
+    public function resetPermissions(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'role'    => 'required|string|in:' . implode(',', self::VALID_ROLES),
+                'subRole' => 'nullable|string|in:' . implode(',', self::VALID_SUB_ROLES),
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Données invalides',
+                    'errors'  => $validator->errors()
+                ], 422);
+            }
+
+            $validated = $validator->validated();
+            $role      = $validated['role'];
+            $subRole   = $validated['subRole'] ?? null;
+
+            // ✅ Permissions par défaut
+            $defaultPermissions = self::DEFAULT_PERMISSIONS;
+
+            // ✅ Sauvegarder dans role_permissions
+            RolePermission::updateOrCreate(
+                ['role' => $role, 'sub_role' => $subRole],
+                ['permissions' => $defaultPermissions]
+            );
+
+            // ✅ Appliquer aux utilisateurs concernés
+            if ($role === 'MEMBER') {
+                $users = User::where('role', 'MEMBER')->get();
+            } else {
+                $users = User::where('role', $role)
+                    ->whereJsonContains('sub_role', $subRole)
+                    ->get();
+            }
+
+            foreach ($users as $user) {
+                /** @var User $user */
+                $user->setMeta('permissions', json_encode($defaultPermissions));
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Permissions réinitialisées avec succès',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur serveur',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ✅ GET /permissions/get?role=BUREAU&subRole=PRESIDENT
     public function getRolePermissions(Request $request): JsonResponse
     {
         try {
             $role    = $request->query('role');
             $subRole = $request->query('subRole');
 
-            $permissions = RolePermission::findPermissions($role, $subRole);
+            if (empty($role) || !in_array($role, self::VALID_ROLES)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Rôle invalide ou manquant',
+                ], 422);
+            }
+
+            if (!empty($subRole) && !in_array($subRole, self::VALID_SUB_ROLES)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'SubRôle invalide',
+                ], 422);
+            }
+
+            $permissions = RolePermission::findPermissions($role, $subRole ?? null);
 
             return response()->json([
-                'success'     => true,
+                'success' => true,
                 'data' => [
                     'role'        => $role,
-                    'subRole'     => $subRole,
-                    'permissions' => $permissions,
+                    'subRole'     => $subRole ?? null,
+                    'permissions' => $permissions ?? [],
                 ]
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -171,6 +243,7 @@ class PermissionController extends Controller
                     'permissions' => $permissions,
                 ]
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -202,6 +275,7 @@ class PermissionController extends Controller
                 'message' => 'Permissions supprimées avec succès',
                 'user_id' => $userId
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -233,6 +307,7 @@ class PermissionController extends Controller
                 'permission'    => $permission,
                 'user_id'       => $userId
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
