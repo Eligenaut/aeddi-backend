@@ -19,16 +19,12 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 // Authentification
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
-    Route::post('/login', [AuthAuthController::class, 'login']);
-    Route::post('/logout', [AuthAuthController::class, 'logout'])->middleware('auth:sanctum');
-    Route::get('/user', [AuthAuthController::class, 'user'])->middleware('auth:sanctum');
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::get('/user', [AuthController::class, 'user'])->middleware('auth:sanctum');
     Route::post('/check-email-allowed', [AuthController::class, 'checkEmailAllowed']);
     Route::post('/create-password', [AuthController::class, 'createPassword']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
-    Route::get('/test-profile-image', [AuthController::class, 'testProfileImage'])->middleware('auth:sanctum');
-    Route::get('/me', [ProfileController::class, 'me'])->middleware('auth:sanctum');
-    Route::put('/me', [ProfileController::class, 'update'])->middleware('auth:sanctum');
 });
 
 // Membres
@@ -60,18 +56,9 @@ Route::middleware('auth:sanctum')->prefix('cotisations')->group(function () {
     Route::delete('/{cotisationId}/member/{userId}', [CotisationController::class, 'deleteMemberCotisation']);
 });
 
+//Permissions
 Route::prefix('permissions')->group(function () {
-    // Ajouter/Mettre à jour les permissions d'un utilisateur
-    Route::post('/user/{userId}', [PermissionController::class, 'addPermission']);
-
-    // Récupérer les permissions d'un utilisateur
-    Route::get('/user/{userId}', [PermissionController::class, 'getPermissions']);
-
-    // Supprimer les permissions d'un utilisateur
-    Route::delete('/user/{userId}', [PermissionController::class, 'deletePermissions']);
-
-    // Vérifier si un utilisateur a une permission
-    Route::get('/user/{userId}/check/{permission}', [PermissionController::class, 'hasPermission']);
+    Route::post('/add', [PermissionController::class, 'addPermission']);
 });
 
 // Activités

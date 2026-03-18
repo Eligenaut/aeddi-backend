@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\AuthorizedEmail;
+use App\Models\RolePermission;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
@@ -13,15 +14,67 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    /**
-     * Vérifier si un email est autorisé (appelé avant l'inscription)
-     */
+    public function login(Request $request)
+    {
+        $request->validate([
+            'email'    => 'required|email',
+            'password' => 'required',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            throw ValidationException::withMessages([
+                'email' => ['Les identifiants fournis sont incorrects.'],
+            ]);
+        }
+
+        $user->load('meta');
+
+        $token = $user->createToken('auth-token')->plainTextToken;
+
+        $avatarUrl = $user->avatar;
+        if (!$avatarUrl && $user->getMeta('profile_image')) {
+            $avatarUrl = asset('storage/' . $user->getMeta('profile_image'));
+        }
+
+        $permissions = [];
+        if (!$user->isAdmin()) {
+            $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Connexion réussie',
+            'user' => [
+                'id'            => $user->id,
+                'name'          => $user->name                        ?? '',
+                'nom'           => $user->getMeta('nom')              ?? '',
+                'prenom'        => $user->getMeta('prenom')           ?? '',
+                'email'         => $user->email                       ?? '',
+                'avatar'        => $avatarUrl                         ?? '',
+                'role'          => strtoupper($user->role ?? 'MEMBER'),
+                'sub_role'      => json_decode($user->sub_role ?? '[]') ?? [],
+                'permissions'   => $permissions,
+                'etablissement' => $user->getMeta('etablissement')    ?? '',
+                'parcours'      => $user->getMeta('parcours')         ?? '',
+                'niveau'        => $user->getMeta('niveau')           ?? '',
+                'promotion'     => $user->getMeta('promotion')        ?? '',
+                'logement'      => $user->getMeta('logement')         ?? '',
+                'bloc_campus'   => $user->getMeta('bloc_campus')      ?? '',
+                'quartier'      => $user->getMeta('quartier')         ?? '',
+                'telephone'     => $user->getMeta('telephone')        ?? '',
+            ],
+            'token' => $token,
+        ]);
+    }
+
     public function checkEmailAllowed(Request $request): JsonResponse
     {
-        // Validation stricte
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|max:255'
         ]);
@@ -36,7 +89,6 @@ class AuthController extends Controller
 
         $email = $request->input('email');
 
-        // Vérifier si déjà inscrit
         $existingUser = User::where('email', $email)->first();
         if ($existingUser) {
             return response()->json([
@@ -45,7 +97,6 @@ class AuthController extends Controller
             ], 409);
         }
 
-        // Vérifier si autorisé
         $authorized = AuthorizedEmail::where('meta_key', 'email')
             ->where('meta_value', $email)
             ->first();
@@ -63,9 +114,6 @@ class AuthController extends Controller
         ], 200);
     }
 
-    /**
-     * Inscription d'un nouvel utilisateur
-     */
     public function register(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -79,7 +127,7 @@ class AuthController extends Controller
             'logement'      => 'required|string|max:50',
             'telephone'     => 'required|string|max:20',
             'url_frontend'  => 'required|url',
-            'image'         => 'nullable|string', // base64
+            'image'         => 'nullable|string',
             'imageName'     => 'nullable|string',
             'imageType'     => 'nullable|string',
             'blocCampus'    => 'nullable|string|max:100',
@@ -96,7 +144,6 @@ class AuthController extends Controller
 
         $email = $request->input('email');
 
-        // 1. Vérifier si l'email existe déjà
         $existingUser = User::where('email', $email)->first();
         if ($existingUser) {
             return response()->json([
@@ -105,7 +152,6 @@ class AuthController extends Controller
             ], 409);
         }
 
-        // 2. Vérifier si l'email est autorisé
         $authorized = AuthorizedEmail::where('meta_key', 'email')
             ->where('meta_value', $email)
             ->first();
@@ -118,17 +164,17 @@ class AuthController extends Controller
         }
 
         try {
-            // 3. Créer l'utilisateur avec une transaction
             DB::beginTransaction();
 
             $user = User::create([
                 'name'     => trim($request->input('prenom') . ' ' . $request->input('nom')),
                 'email'    => $email,
                 'password' => Hash::make(Str::random(32)),
-                'role'     => 'membre',
+                'role'     => 'MEMBER',
+                'sub_role' => json_encode([]),
             ]);
 
-            // 4. Stocker les données secondaires
+            // Metas
             $metas = [
                 'nom'           => $request->input('nom'),
                 'prenom'        => $request->input('prenom'),
@@ -148,85 +194,68 @@ class AuthController extends Controller
                 }
             }
 
-            // 5. Gérer l'image de profil
+            // ✅ Assigner les permissions MEMBER automatiquement
+            $memberPermissions = RolePermission::findPermissions('MEMBER', null);
+            if (!empty($memberPermissions)) {
+                $user->setMeta('permissions', json_encode($memberPermissions));
+            }
+
+            // Image
             if ($request->has('image') && !empty($request->input('image'))) {
                 $imageBase64 = $request->input('image');
-
-                // Vérifier que c'est bien un data URL
                 if (str_starts_with($imageBase64, 'data:image/')) {
                     try {
                         $imageParts = explode(',', $imageBase64);
                         if (count($imageParts) === 2) {
                             $imageData = base64_decode($imageParts[1], true);
-
-                            if ($imageData === false) {
-                                throw new \Exception('Décodage base64 échoué');
-                            }
+                            if ($imageData === false) throw new \Exception('Décodage base64 échoué');
 
                             $extension = 'jpg';
                             $imageType = $request->input('imageType', '');
+                            if (str_contains($imageType, 'png'))       $extension = 'png';
+                            elseif (str_contains($imageType, 'webp'))  $extension = 'webp';
 
-                            if (str_contains($imageType, 'png')) {
-                                $extension = 'png';
-                            } elseif (str_contains($imageType, 'webp')) {
-                                $extension = 'webp';
-                            }
-
-                            $imageName = 'profile_' . $user->id . '.' . $extension;
-                            $imagePath = 'profile_images/' . $imageName;
+                            $imagePath = 'profile_images/profile_' . $user->id . '.' . $extension;
                             $fullPath  = storage_path('app/public/' . $imagePath);
-
-                            // Créer le répertoire s'il n'existe pas
                             $directory = dirname($fullPath);
-                            if (!file_exists($directory)) {
-                                mkdir($directory, 0755, true);
-                            }
 
-                            // Écrire le fichier
+                            if (!file_exists($directory)) mkdir($directory, 0755, true);
+
                             file_put_contents($fullPath, $imageData);
 
-                            // Mettre à jour l'avatar
+                            // ✅ Seulement avatar, plus profile_image
                             $user->update(['avatar' => asset('storage/' . $imagePath)]);
-                            $user->setMeta('profile_image', $imagePath);
 
                             Log::info('Image profil créée', ['user_id' => $user->id, 'path' => $imagePath]);
                         }
                     } catch (\Exception $e) {
                         Log::warning('Erreur traitement image: ' . $e->getMessage(), ['user_id' => $user->id]);
-                        // Ne pas bloquer l'inscription si l'image échoue
                     }
                 }
             }
 
-            // 6. Générer un token de création de mot de passe
+            // Token création mot de passe
             $token = Str::random(64);
             DB::table('password_reset_tokens')->updateOrInsert(
                 ['email' => $email],
-                [
-                    'token'      => Hash::make($token),
-                    'created_at' => now()
-                ]
+                ['token' => Hash::make($token), 'created_at' => now()]
             );
 
-            // 7. Préparer l'URL de réinitialisation
             $resetUrl = $request->input('url_frontend') . '/create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
-            // 8. Envoyer l'email
             try {
                 Mail::send('emails.create_password', [
                     'resetUrl' => $resetUrl,
                     'user'     => $user
                 ], function ($message) use ($user) {
-                    $message->to($user->email)
-                        ->subject('Créez votre mot de passe - AEDDI');
+                    $message->to($user->email)->subject('Créez votre mot de passe - AEDDI');
                 });
                 Log::info('Email création mot de passe envoyé', ['user_id' => $user->id, 'email' => $email]);
             } catch (\Exception $e) {
-                Log::error('Erreur envoi email création mot de passe: ' . $e->getMessage(), ['user_id' => $user->id]);
-                // Ne pas bloquer l'inscription si l'email échoue
+                Log::error('Erreur envoi email: ' . $e->getMessage(), ['user_id' => $user->id]);
             }
 
-            // 9. Associer aux cotisations existantes
+            // Cotisations
             try {
                 $cotisations = \App\Models\Cotisation::all();
                 foreach ($cotisations as $cotisation) {
@@ -241,24 +270,19 @@ class AuthController extends Controller
 
             DB::commit();
 
-            Log::info('User registered successfully', [
-                'user_id' => $user->id,
-                'email'   => $email
-            ]);
+            Log::info('User registered successfully', ['user_id' => $user->id, 'email' => $email]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Inscription réussie ! Un email de création de mot de passe a été envoyé.',
                 'user_id' => $user->id
             ], 201);
-
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Erreur lors de l\'inscription: ' . $e->getMessage(), [
                 'email' => $email,
                 'trace' => $e->getTraceAsString()
             ]);
-
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de l\'inscription'
@@ -266,9 +290,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Créer le mot de passe après inscription
-     */
     public function createPassword(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -289,10 +310,7 @@ class AuthController extends Controller
         $email = $request->input('email');
         $token = $request->input('token');
 
-        // Vérifier le token
-        $resetRecord = DB::table('password_reset_tokens')
-            ->where('email', $email)
-            ->first();
+        $resetRecord = DB::table('password_reset_tokens')->where('email', $email)->first();
 
         if (!$resetRecord || !Hash::check($token, $resetRecord->token)) {
             return response()->json([
@@ -310,15 +328,14 @@ class AuthController extends Controller
             ], 404);
         }
 
-        // Mettre à jour le mot de passe
         $user->update([
             'password'          => Hash::make($request->input('password')),
             'email_verified_at' => now(),
         ]);
 
-        // Supprimer le token utilisé
         DB::table('password_reset_tokens')->where('email', $email)->delete();
 
+        $user->load('meta');
         $apiToken = $user->createToken('auth-token')->plainTextToken;
 
         return response()->json([
@@ -326,22 +343,17 @@ class AuthController extends Controller
             'message' => 'Mot de passe créé avec succès',
             'token'   => $apiToken,
             'user'    => [
-                'id'            => $user->id,
-                'name'          => $user->name,
-                'nom'           => $user->getMeta('nom'),
-                'prenom'        => $user->getMeta('prenom'),
-                'email'         => $user->email,
-                'avatar'        => $user->avatar,
-                'profile_image' => $user->getMeta('profile_image'),
-                'role'          => $user->role,
+                'id'     => $user->id,
+                'name'   => $user->name,
+                'nom'    => $user->getMeta('nom'),
+                'prenom' => $user->getMeta('prenom'),
+                'email'  => $user->email,
+                'avatar' => $user->avatar ?? '',
+                'role'   => strtoupper($user->role ?? 'MEMBER'),
             ]
         ], 200);
     }
 
-
-    /**
-     * Demander un reset de mot de passe
-     */
     public function forgotPassword(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -358,9 +370,8 @@ class AuthController extends Controller
         }
 
         $email = $request->input('email');
-        $user = User::where('email', $email)->first();
+        $user  = User::where('email', $email)->first();
 
-        // Vérifier que l'utilisateur existe
         if (!$user) {
             return response()->json([
                 'success' => false,
@@ -369,43 +380,29 @@ class AuthController extends Controller
         }
 
         try {
-            // Générer un token
             $token = Str::random(64);
             DB::table('password_reset_tokens')->updateOrInsert(
                 ['email' => $email],
-                [
-                    'token'      => Hash::make($token),
-                    'created_at' => now()
-                ]
+                ['token' => Hash::make($token), 'created_at' => now()]
             );
 
-            // Préparer l'URL
             $resetUrl = $request->input('url_frontend') . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
-            // Envoyer l'email
             Mail::send('emails.password_reset', [
                 'resetUrl' => $resetUrl,
                 'user'     => $user
             ], function ($message) use ($user) {
-                $message->to($user->email)
-                    ->subject('Réinitialisation de votre mot de passe - AEDDI');
+                $message->to($user->email)->subject('Réinitialisation de votre mot de passe - AEDDI');
             });
 
-            Log::info('Email réinitialisation envoyé', [
-                'user_id' => $user->id,
-                'email'   => $email
-            ]);
+            Log::info('Email réinitialisation envoyé', ['user_id' => $user->id, 'email' => $email]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Un email de réinitialisation a été envoyé à ' . $email . '.'
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Erreur envoi email reset: ' . $e->getMessage(), [
-                'email' => $email,
-                'trace' => $e->getTraceAsString()
-            ]);
-
+            Log::error('Erreur envoi email reset: ' . $e->getMessage(), ['email' => $email]);
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de l\'envoi de l\'email'
@@ -413,9 +410,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Réinitialiser le mot de passe
-     */
     public function resetPassword(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -435,10 +429,7 @@ class AuthController extends Controller
         $email = $request->input('email');
         $token = $request->input('token');
 
-        // Vérifier le token
-        $resetRecord = DB::table('password_reset_tokens')
-            ->where('email', $email)
-            ->first();
+        $resetRecord = DB::table('password_reset_tokens')->where('email', $email)->first();
 
         if (!$resetRecord || !Hash::check($token, $resetRecord->token)) {
             return response()->json([
@@ -456,14 +447,13 @@ class AuthController extends Controller
             ], 404);
         }
 
-        // Mettre à jour le mot de passe
         $user->update([
             'password' => Hash::make($request->input('password'))
         ]);
 
-        // Supprimer le token utilisé
         DB::table('password_reset_tokens')->where('email', $email)->delete();
 
+        $user->load('meta');
         $apiToken = $user->createToken('auth-token')->plainTextToken;
 
         return response()->json([
@@ -471,21 +461,17 @@ class AuthController extends Controller
             'message' => 'Mot de passe réinitialisé avec succès',
             'token'   => $apiToken,
             'user'    => [
-                'id'            => $user->id,
-                'name'          => $user->name,
-                'nom'           => $user->getMeta('nom'),
-                'prenom'        => $user->getMeta('prenom'),
-                'email'         => $user->email,
-                'avatar'        => $user->avatar,
-                'profile_image' => $user->getMeta('profile_image'),
-                'role'          => $user->role,
+                'id'     => $user->id,
+                'name'   => $user->name,
+                'nom'    => $user->getMeta('nom'),
+                'prenom' => $user->getMeta('prenom'),
+                'email'  => $user->email,
+                'avatar' => $user->avatar ?? '',
+                'role'   => strtoupper($user->role ?? 'MEMBER'),
             ]
         ], 200);
     }
 
-    /**
-     * Ajouter un email autorisé
-     */
     public function addAuthorizedEmail(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -502,7 +488,6 @@ class AuthController extends Controller
 
         $email = $request->input('email');
 
-        // Vérifier si déjà dans la liste
         $existing = AuthorizedEmail::where('meta_key', 'email')
             ->where('meta_value', $email)
             ->first();
@@ -534,9 +519,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Lister les emails autorisés
-     */
     public function getAuthorizedEmails(): JsonResponse
     {
         try {
@@ -561,9 +543,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Supprimer un email autorisé
-     */
     public function deleteAuthorizedEmail($id): JsonResponse
     {
         try {

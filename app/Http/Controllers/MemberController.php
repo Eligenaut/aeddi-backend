@@ -3,135 +3,64 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\CotisationMembre;
-use App\Models\Activite;
+use App\Models\RolePermission;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
 
 class MemberController extends Controller
 {
-    /**
-     * Obtenir la liste des membres avec leurs stats de cotisation
-     */
-    public function index(Request $request)
+    private function getAvatarUrl(User $member): string
     {
-        $members = User::select([
-            'id',
-            'name',
-            'email',
-            'avatar',
-            'google_id',
-            'created_at',
-            'updated_at'
-        ])->where('email', '!=', 'admin@aeddi.com')->get();
+        if ($member->avatar) {
+            return $member->avatar;
+        }
+        if ($member->getMeta('profile_image')) {
+            return asset('storage/' . $member->getMeta('profile_image'));
+        }
+        return '';
+    }
 
-        $membersWithStats = $members->map(function ($member) {
-            $cotisationStats = CotisationMembre::where('user_id', $member->id)
-                ->selectRaw('
-                    COUNT(*) as total,
-                    SUM(CASE WHEN statut = "paye" THEN 1 ELSE 0 END) as payees,
-                    SUM(CASE WHEN statut IN ("non_paye", "reste") THEN 1 ELSE 0 END) as non_payees
-                ')
-                ->first();
+    private function formatMember(User $member): array
+    {
+        return [
+            'id'            => $member->id,
+            'name'          => $member->name                        ?? '',
+            'nom'           => $member->getMeta('nom')              ?? '',
+            'prenom'        => $member->getMeta('prenom')           ?? '',
+            'email'         => $member->email                       ?? '',
+            'avatar'        => $this->getAvatarUrl($member),
+            'role'          => strtoupper($member->role ?? 'MEMBER'),
+            'sub_role'      => json_decode($member->sub_role ?? '[]') ?? [],
+            'etablissement' => $member->getMeta('etablissement')    ?? '',
+            'parcours'      => $member->getMeta('parcours')         ?? '',
+            'niveau'        => $member->getMeta('niveau')           ?? '',
+            'promotion'     => $member->getMeta('promotion')        ?? '',
+            'logement'      => $member->getMeta('logement')         ?? '',
+            'bloc_campus'   => $member->getMeta('bloc_campus')      ?? '',
+            'quartier'      => $member->getMeta('quartier')         ?? '',
+            'telephone'     => $member->getMeta('telephone')        ?? '',
+            'statut'        => $member->email_verified_at ? 'actif' : 'en_attente',
+            'created_at'    => $member->created_at->toDateTimeString(),
+            'updated_at'    => $member->updated_at->toDateTimeString(),
+        ];
+    }
 
-            // Montant total des cotisations (somme des montants d'origine)
-            $totalMontant = CotisationMembre::where('user_id', $member->id)
-                ->join('cotisations', 'cotisation_membre.cotisation_id', '=', 'cotisations.id')
-                ->sum('cotisations.montant');
+    public function index(): JsonResponse
+    {
+        $members = User::where('role', '!=', 'ADMIN')->get();
+        $members->load('meta');
 
-            // Montant payé = somme des montants pour les cotisations payées
-            $montantPaye = CotisationMembre::where('user_id', $member->id)
-                ->join('cotisations', 'cotisation_membre.cotisation_id', '=', 'cotisations.id')
-                ->where('cotisation_membre.statut', 'paye')
-                ->sum('cotisations.montant');
-
-            // Montant non payé = somme des montants restants pour les cotisations non payées ou reste
-            $montantNonPaye = CotisationMembre::where('user_id', $member->id)
-                ->whereIn('statut', ['non_paye', 'reste'])
-                ->sum('montant_restant');
-
-            $member->cotisation_stats = [
-                'total' => $cotisationStats->total ?? 0,
-                'payees' => $cotisationStats->payees ?? 0,
-                'non_payees' => $cotisationStats->non_payees ?? 0,
-                'total_montant' => $totalMontant ?? 0,
-                'montant_paye' => $montantPaye ?? 0,
-                'montant_non_paye' => $montantNonPaye ?? 0
-            ];
-
-            return $member;
-        });
+        $data = $members->map(fn(User $member) => $this->formatMember($member));
 
         return response()->json([
             'success' => true,
-            'data' => $membersWithStats,
-            'total' => $membersWithStats->count()
+            'data'    => $data,
+            'total'   => $data->count()
         ]);
     }
 
-    /**
-     * Obtenir les statistiques des membres (excluant l'admin)
-     */
-    public function stats()
-    {
-        $totalMembers = User::where('email', '!=', 'admin@aeddi.com')->count();
-        $googleMembers = User::whereNotNull('google_id')->where('email', '!=', 'admin@aeddi.com')->count();
-        $classicMembers = User::whereNull('google_id')->where('email', '!=', 'admin@aeddi.com')->count();
-        
-        // Membres créés ce mois
-        $thisMonth = User::whereMonth('created_at', now()->month)
-                        ->whereYear('created_at', now()->year)
-                        ->where('email', '!=', 'admin@aeddi.com')
-                        ->count();
-
-        return response()->json([
-            'success' => true,
-            'stats' => [
-                'total' => $totalMembers,
-                'google' => $googleMembers,
-                'classic' => $classicMembers,
-                'this_month' => $thisMonth
-            ]
-        ]);
-    }
-
-    /**
-     * Obtenir les statistiques globales des cotisations pour l'admin
-     */
-    public function cotisationStats()
-    {
-        // Statistiques globales des cotisations
-        $totalCotisations = CotisationMembre::count();
-        $cotisationsPayees = CotisationMembre::where('statut', 'paye')->count();
-        $cotisationsNonPayees = CotisationMembre::whereIn('statut', ['non_paye', 'reste'])->count();
-        
-        // Montants
-        $montantTotal = CotisationMembre::join('cotisations', 'cotisation_membre.cotisation_id', '=', 'cotisations.id')
-            ->sum('cotisations.montant');
-            
-        $montantPaye = CotisationMembre::join('cotisations', 'cotisation_membre.cotisation_id', '=', 'cotisations.id')
-            ->where('cotisation_membre.statut', 'paye')
-            ->sum('cotisations.montant');
-            
-        $montantNonPaye = CotisationMembre::whereIn('statut', ['non_paye', 'reste'])
-            ->sum('montant_restant');
-
-        return response()->json([
-            'success' => true,
-            'stats' => [
-                'total' => $totalCotisations,
-                'payees' => $cotisationsPayees,
-                'non_payees' => $cotisationsNonPayees,
-                'montant_total' => $montantTotal,
-                'montant_paye' => $montantPaye,
-                'montant_non_paye' => $montantNonPaye
-            ]
-        ]);
-    }
-
-    /**
-     * Obtenir un membre spécifique
-     */
-    public function show($id)
+    public function show($id): JsonResponse
     {
         $member = User::find($id);
 
@@ -142,221 +71,144 @@ class MemberController extends Controller
             ], 404);
         }
 
-        // S'assurer que l'avatar est une URL complète
-        $avatarUrl = $member->avatar;
-        if (!$avatarUrl && $member->profile_image) {
-            $avatarUrl = asset('storage/' . $member->profile_image);
-        }
+        $member->load('meta');
 
         return response()->json([
             'success' => true,
-            'data' => [
-                'id' => $member->id,
-                'name' => $member->name,
-                'nom' => $member->nom,
-                'prenom' => $member->prenom,
-                'email' => $member->email,
-                'avatar' => $avatarUrl,
-                'google_id' => $member->google_id,
-                'role' => $member->role ?? 'member',
-                'etablissement' => $member->etablissement,
-                'parcours' => $member->parcours,
-                'niveau' => $member->niveau,
-                'promotion' => $member->promotion,
-                'logement' => $member->logement,
-                'blocCampus' => $member->bloc_campus,
-                'quartier' => $member->quartier,
-                'telephone' => $member->telephone,
-                'profile_image' => $member->profile_image,
-                'statut' => $member->email_verified_at ? 'actif' : 'en_attente',
-                'created_at' => $member->created_at->toDateTimeString(),
-                'updated_at' => $member->updated_at->toDateTimeString(),
-            ]
+            'data'    => $this->formatMember($member)
         ]);
     }
 
-    /**
-     * Mettre à jour un membre (admin seulement)
-     */
-    public function update(Request $request, $id)
+    public function update(Request $request, $id): JsonResponse
     {
-        $user = User::find($id);
-        
-        if (!$user) {
+        $member = User::find($id);
+
+        if (!$member) {
             return response()->json([
                 'success' => false,
                 'message' => 'Membre non trouvé'
             ], 404);
         }
 
-        // Validation des données
+        if ($member->isAdmin()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Modification impossible pour l\'admin.'
+            ], 403);
+        }
+
         $validated = $request->validate([
-            'nom' => 'required|string|max:255',
-            'prenom' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $id,
-            'telephone' => 'nullable|string|max:20',
+            'nom'           => 'required|string|max:255',
+            'prenom'        => 'required|string|max:255',
+            'email'         => 'required|email|unique:users,email,' . $id,
+            'telephone'     => 'nullable|string|max:20',
             'etablissement' => 'nullable|string|max:255',
-            'parcours' => 'nullable|string|max:255',
-            'niveau' => 'nullable|string|max:255',
-            'promotion' => 'nullable|string|max:255',
-            'logement' => 'nullable|in:campus,ville',
-            'blocCampus' => 'nullable|string|max:255',
-            'quartier' => 'nullable|string|max:255',
-            'role' => 'nullable|in:admin,bureau,member',
-            'sub_role' => 'nullable|string|max:255',
-            'image' => 'nullable|string',
-            'imageName' => 'nullable|string',
-            'imageType' => 'nullable|string',
+            'parcours'      => 'nullable|string|max:255',
+            'niveau'        => 'nullable|string|max:255',
+            'promotion'     => 'nullable|string|max:255',
+            'logement'      => 'nullable|string|max:50',
+            'blocCampus'    => 'nullable|string|max:255',
+            'quartier'      => 'nullable|string|max:255',
+            'image'         => 'nullable|string',
+            'imageName'     => 'nullable|string',
+            'imageType'     => 'nullable|string',
+            'role'          => 'nullable|string|in:MEMBER,BUREAU',
+            'subRoles'      => 'nullable|array',
+            'subRoles.*'    => 'string',
         ]);
 
         try {
-            $filledRole = $validated['role'] ?? $user->role;
-            $filledSubRole = ($filledRole === 'bureau') ? ($validated['sub_role'] ?? null) : null;
-
-            $user->fill([
-                'nom' => $validated['nom'],
-                'prenom' => $validated['prenom'],
+            $updateData = [
+                'name'  => trim($validated['prenom'] . ' ' . $validated['nom']),
                 'email' => $validated['email'],
-                'telephone' => $validated['telephone'],
-                'etablissement' => $validated['etablissement'],
-                'parcours' => $validated['parcours'],
-                'niveau' => $validated['niveau'],
-                'promotion' => $validated['promotion'],
-                'logement' => $validated['logement'],
-                'bloc_campus' => $validated['blocCampus'],
-                'quartier' => $validated['quartier'],
-                'role' => $filledRole,
-                'sub_role' => $filledSubRole,
-            ]);
+            ];
 
-            if (isset($validated['image']) && $validated['image']) {
-                $imageData = $validated['image'];
-                $imageName = $validated['imageName'] ?? 'profile_' . time() . '.jpg';
-                
-                $imageData = str_replace('data:image/jpeg;base64,', '', $imageData);
-                $imageData = str_replace('data:image/png;base64,', '', $imageData);
-                $imageData = str_replace('data:image/jpg;base64,', '', $imageData);
-                $imageData = str_replace(' ', '+', $imageData);
-                
-                $image = base64_decode($imageData);
-                $path = 'profile_images/' . $imageName;
-                
-                \Storage::disk('public')->put($path, $image);
-                $user->profile_image = $path;
+            if (isset($validated['role'])) {
+                $newRole     = $validated['role'];
+                $newSubRoles = $newRole === 'BUREAU' ? ($validated['subRoles'] ?? []) : [];
+                $oldRole     = $member->role;
+                $oldSubRole  = json_decode($member->sub_role ?? '[]', true)[0] ?? null;
+                $newSubRole  = $newSubRoles[0] ?? null;
+                if ($newRole !== $oldRole || $newSubRole !== $oldSubRole) {
+                    $newPermissions = RolePermission::findPermissions($newRole, $newSubRole);
+                    $member->setMeta('permissions', json_encode($newPermissions));
+                }
+
+                $updateData['role']     = $newRole;
+                $updateData['sub_role'] = json_encode($newSubRoles);
             }
 
-            $user->save();
+            $member->update($updateData);
 
-            $avatarUrl = $user->avatar;
-            if (!$avatarUrl && $user->profile_image) {
-                $avatarUrl = asset('storage/' . $user->profile_image);
+            $metas = [
+                'nom'           => $validated['nom'],
+                'prenom'        => $validated['prenom'],
+                'telephone'     => $validated['telephone']     ?? '',
+                'etablissement' => $validated['etablissement'] ?? '',
+                'parcours'      => $validated['parcours']      ?? '',
+                'niveau'        => $validated['niveau']        ?? '',
+                'promotion'     => $validated['promotion']     ?? '',
+                'logement'      => $validated['logement']      ?? '',
+                'bloc_campus'   => $validated['logement'] === 'campus' ? ($validated['blocCampus'] ?? '') : '',
+                'quartier'      => $validated['logement'] === 'ville'  ? ($validated['quartier']   ?? '') : '',
+            ];
+
+            foreach ($metas as $key => $value) {
+                $member->setMeta($key, $value);
             }
+
+            if (!empty($validated['image'])) {
+                $imageBase64 = $validated['image'];
+                if (str_starts_with($imageBase64, 'data:image/')) {
+                    $imageParts = explode(',', $imageBase64);
+                    if (count($imageParts) === 2) {
+                        $imageData = base64_decode($imageParts[1], true);
+                        $extension = 'jpg';
+                        $imageType = $validated['imageType'] ?? '';
+
+                        if (str_contains($imageType, 'png'))      $extension = 'png';
+                        elseif (str_contains($imageType, 'webp')) $extension = 'webp';
+
+                        $imagePath = 'profile_images/profile_' . $member->id . '.' . $extension;
+                        Storage::disk('public')->put($imagePath, $imageData);
+                        $member->update(['avatar' => asset('storage/' . $imagePath)]);
+                    }
+                }
+            }
+
+            $member->load('meta');
 
             return response()->json([
                 'success' => true,
                 'message' => 'Membre mis à jour avec succès',
-                'data' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'nom' => $user->nom,
-                    'prenom' => $user->prenom,
-                    'email' => $user->email,
-                    'avatar' => $avatarUrl,
-                    'google_id' => $user->google_id,
-                'role' => $user->role ?? 'member',
-                'sub_role' => $user->sub_role,
-                'etablissement' => $user->etablissement,
-                    'parcours' => $user->parcours,
-                    'niveau' => $user->niveau,
-                    'promotion' => $user->promotion,
-                    'logement' => $user->logement,
-                    'blocCampus' => $user->bloc_campus,
-                    'quartier' => $user->quartier,
-                    'telephone' => $user->telephone,
-                    'profile_image' => $user->profile_image,
-                    'statut' => $user->email_verified_at ? 'actif' : 'en_attente',
-                    'created_at' => $user->created_at->toDateTimeString(),
-                    'updated_at' => $user->updated_at->toDateTimeString(),
-                ]
+                'data'    => $this->formatMember($member)
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la mise à jour du membre',
-                'error' => $e->getMessage()
+                'message' => 'Erreur lors de la mise à jour',
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
 
-    /**
-     * Supprimer un membre
-     */
-    public function destroy($id)
+    public function destroy($id): JsonResponse
     {
-        $user = User::find($id);
-        if (!$user || $user->email === 'admin@aeddi.com') {
+        $member = User::find($id);
+
+        if (!$member || $member->isAdmin()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Suppression impossible.'
             ], 403);
         }
-        $user->delete();
+
+        $member->delete();
+
         return response()->json([
             'success' => true,
             'message' => 'Membre supprimé avec succès.'
-        ]);
-    }
-
-    /**
-     * Obtenir les statistiques globales du dashboard
-     */
-    public function dashboardStats()
-    {
-        $totalMembers = User::where('email', '!=', 'admin@aeddi.com')->count();
-        $bureauMembers = User::where('email', '!=', 'admin@aeddi.com')
-            ->where('role', 'bureau')
-            ->count();
-        $regularMembers = $totalMembers - $bureauMembers;
-
-        $totalActivities = Activite::count();
-        $enCoursActivities = Activite::where('statut', 'en_cours')->count();
-        $termineesActivities = Activite::where('statut', 'terminee')->count();
-
-        $cotisationStats = CotisationMembre::join('cotisations', 'cotisation_membre.cotisation_id', '=', 'cotisations.id')
-            ->selectRaw('
-                COUNT(*) as total_cotisations,
-                SUM(CASE WHEN cotisation_membre.statut = "paye" THEN 1 ELSE 0 END) as total_paye,
-                SUM(CASE WHEN cotisation_membre.statut IN ("non_paye", "reste") THEN 1 ELSE 0 END) as total_non_paye,
-                SUM(CASE WHEN cotisation_membre.statut = "reste" THEN 1 ELSE 0 END) as total_reste,
-                SUM(CASE WHEN cotisation_membre.statut = "paye" THEN cotisations.montant ELSE 0 END) as montant_paye,
-                SUM(CASE WHEN cotisation_membre.statut IN ("non_paye", "reste") THEN cotisations.montant ELSE 0 END) as montant_non_paye,
-                SUM(CASE WHEN cotisation_membre.statut = "reste" THEN cotisation_membre.montant_restant ELSE 0 END) as montant_restant
-            ')->first();
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'membres' => [
-                    'total' => $totalMembers,
-                    'bureau' => $bureauMembers,
-                    'membres' => $regularMembers
-                ],
-                'activites' => [
-                    'total' => $totalActivities,
-                    'en_cours' => $enCoursActivities,
-                    'terminees' => $termineesActivities
-                ],
-                'cotisations' => [
-                    'total_cotisations' => $cotisationStats->total_cotisations ?? 0,
-                    'total_paye' => $cotisationStats->total_paye ?? 0,
-                    'total_non_paye' => $cotisationStats->total_non_paye ?? 0,
-                    'total_reste' => $cotisationStats->total_reste ?? 0,
-                    'montant_paye' => $cotisationStats->montant_paye ?? 0,
-                    'montant_non_paye' => $cotisationStats->montant_non_paye ?? 0,
-                    'montant_restant' => $cotisationStats->montant_restant ?? 0
-                ]
-            ]
         ]);
     }
 }

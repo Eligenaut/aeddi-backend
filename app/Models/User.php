@@ -34,8 +34,15 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'password'          => 'hashed',
         ];
+    }
+
+    //Vérifier si l'utilisateur est admin
+    public function isAdmin(): bool
+    {
+        return strtoupper($this->role) === 'ADMIN'
+            && $this->email === 'admin@aeddi.com';
     }
 
     // Relation user_meta
@@ -47,6 +54,10 @@ class User extends Authenticatable
     // Helper pour récupérer une meta
     public function getMeta(string $key): ?string
     {
+        if ($this->relationLoaded('meta')) {
+            return $this->meta->where('meta_key', $key)->value('meta_value');
+        }
+
         return $this->meta()->where('meta_key', $key)->value('meta_value');
     }
 
@@ -56,18 +67,5 @@ class User extends Authenticatable
             ['meta_key' => $key],
             ['meta_value' => $value]
         );
-    }
-
-    // Relations existantes
-    public function cotisationMembres(): HasMany
-    {
-        return $this->hasMany(CotisationMembre::class);
-    }
-
-    public function cotisations()
-    {
-        return $this->belongsToMany(Cotisation::class, 'cotisation_membre')
-                    ->withPivot('statut', 'montant_restant')
-                    ->withTimestamps();
     }
 }

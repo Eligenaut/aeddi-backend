@@ -4,20 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\UserMeta;
+use App\Models\RolePermission;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 
 class PermissionController extends Controller
 {
-    /**
-     * Liste des rôles valides
-     */
     private const VALID_ROLES = ['BUREAU', 'MEMBER'];
 
-    /**
-     * Liste des sous-rôles valides
-     */
     private const VALID_SUB_ROLES = [
         'PRESIDENT',
         'VICE_PRESIDENT',
@@ -34,145 +29,125 @@ class PermissionController extends Controller
         'COMMISSION_ENVIRONNEMENT'
     ];
 
-    /**
-     * Liste des permissions valides
-     */
     private const VALID_PERMISSIONS = [
-        'show_activite', 'edit_activite', 'delete_activite', 'create_activite',
-        'show_cotisation', 'edit_cotisation', 'delete_cotisation', 'create_cotisation',
-        'show_membre', 'edit_membre', 'delete_membre', 'create_membre',
-        'show_parametre', 'edit_parametre', 'delete_parametre', 'create_parametre'
+        'show_activite',
+        'edit_activite',
+        'delete_activite',
+        'create_activite',
+        'show_cotisation',
+        'edit_cotisation',
+        'delete_cotisation',
+        'create_cotisation',
+        'show_membre',
+        'edit_membre',
+        'delete_membre',
+        'create_membre',
+        'show_parametre',
+        'edit_parametre',
+        'delete_parametre',
+        'create_parametre'
     ];
 
-    /**
-     * Ajouter/Mettre à jour les permissions d'un utilisateur
-     * @param Request $request
-     * @param int $userId
-     * @return JsonResponse
-     */
-    public function addPermission(Request $request, $userId): JsonResponse
+    // ✅ POST /permissions/add
+    // Définir les permissions pour un role/subRole dans role_permissions
+    // ET les appliquer à tous les utilisateurs qui ont ce role/subRole
+    public function addPermission(Request $request): JsonResponse
     {
         try {
-            // Validation des données
             $validator = Validator::make($request->all(), [
-                'role' => 'required|string|in:' . implode(',', self::VALID_ROLES),
-                'subRoles' => 'required|array',
-                'subRoles.*' => 'string|in:' . implode(',', self::VALID_SUB_ROLES),
-                'permissions' => 'required|array',
+                'role'          => 'required|string|in:' . implode(',', self::VALID_ROLES),
+                'subRoles'      => 'nullable|array',
+                'subRoles.*'    => 'string|in:' . implode(',', self::VALID_SUB_ROLES),
+                'permissions'   => 'required|array',
                 'permissions.*' => 'string|in:' . implode(',', self::VALID_PERMISSIONS)
             ]);
 
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Données de validation invalides',
-                    'errors' => $validator->errors()
+                    'message' => 'Données invalides',
+                    'errors'  => $validator->errors()
                 ], 422);
             }
 
-            $validated = $validator->validated();
+            $validated   = $validator->validated();
+            $role        = $validated['role'];
+            $subRoles    = $role === 'BUREAU' ? ($validated['subRoles'] ?? []) : [null];
+            $permissions = array_unique($validated['permissions']);
 
-            // Vérifier que l'utilisateur existe
-            $user = User::find($userId);
+            $usersUpdated = 0;
 
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Utilisateur non trouvé'
-                ], 404);
+            foreach ($subRoles as $subRole) {
+
+                // ✅ Sauvegarder dans role_permissions
+                RolePermission::updateOrCreate(
+                    ['role' => $role, 'sub_role' => $subRole],
+                    ['permissions' => $permissions]
+                );
+
+                // ✅ Appliquer à tous les utilisateurs qui ont ce role/subRole
+                if ($role === 'MEMBER') {
+                    $users = User::where('role', 'MEMBER')->get();
+                } else {
+                    $users = User::where('role', $role)
+                        ->whereJsonContains('sub_role', $subRole)
+                        ->get();
+                }
+
+                foreach ($users as $user) {
+                    /** @var User $user */
+                    $user->setMeta('permissions', json_encode($permissions));
+                }
+
+                $usersUpdated += $users->count();
             }
-
-            // Validation supplémentaire : si BUREAU, doit avoir au moins 1 subRole
-            if ($validated['role'] === 'BUREAU' && empty($validated['subRoles'])) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Un membre du bureau doit avoir au moins une fonction (subRole)'
-                ], 422);
-            }
-
-            // Validation supplémentaire : si MEMBER, subRoles doit être vide
-            if ($validated['role'] === 'MEMBER' && !empty($validated['subRoles'])) {
-                $validated['subRoles'] = [];
-            }
-
-            // Préparer les données à sauvegarder
-            $permissionData = [
-                'role' => $validated['role'],
-                'subRoles' => $validated['subRoles'],
-                'permissions' => array_unique($validated['permissions']), // Éviter les doublons
-                'updatedAt' => now()->toISOString()
-            ];
-
-            // Sauvegarder le rôle principal
-            UserMeta::updateOrCreate(
-                [
-                    'user_id' => $userId,
-                    'meta_key' => 'role'
-                ],
-                [
-                    'meta_value' => $validated['role']
-                ]
-            );
-
-            // Sauvegarder les sous-rôles
-            UserMeta::updateOrCreate(
-                [
-                    'user_id' => $userId,
-                    'meta_key' => 'sub_roles'
-                ],
-                [
-                    'meta_value' => json_encode($validated['subRoles'])
-                ]
-            );
-
-            // Sauvegarder les permissions
-            UserMeta::updateOrCreate(
-                [
-                    'user_id' => $userId,
-                    'meta_key' => 'permissions'
-                ],
-                [
-                    'meta_value' => json_encode($validated['permissions'])
-                ]
-            );
-
-            // Optionnel : sauvegarder tout dans une seule meta_value pour faciliter la récupération
-            UserMeta::updateOrCreate(
-                [
-                    'user_id' => $userId,
-                    'meta_key' => 'permission_data'
-                ],
-                [
-                    'meta_value' => json_encode($permissionData)
-                ]
-            );
 
             return response()->json([
                 'success' => true,
-                'message' => 'Permissions mises à jour avec succès',
+                'message' => 'Permissions définies et appliquées avec succès',
                 'data' => [
-                    'user_id' => $userId,
-                    'role' => $validated['role'],
-                    'subRoles' => $validated['subRoles'],
-                    'permissions' => $validated['permissions'],
-                    'totalPermissions' => count($validated['permissions'])
+                    'role'          => $role,
+                    'subRoles'      => $subRoles,
+                    'permissions'   => $permissions,
+                    'users_updated' => $usersUpdated,
                 ]
             ], 200);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la sauvegarde des permissions',
-                'error' => $e->getMessage()
+                'message' => 'Erreur serveur',
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
 
-    /**
-     * Récupérer les permissions d'un utilisateur
-     * @param int $userId
-     * @return JsonResponse
-     */
+    // Récupérer les permissions d'un role/subRole
+    public function getRolePermissions(Request $request): JsonResponse
+    {
+        try {
+            $role    = $request->query('role');
+            $subRole = $request->query('subRole');
+
+            $permissions = RolePermission::findPermissions($role, $subRole);
+
+            return response()->json([
+                'success'     => true,
+                'data' => [
+                    'role'        => $role,
+                    'subRole'     => $subRole,
+                    'permissions' => $permissions,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur serveur',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ✅ GET /permissions/{userId}
     public function getPermissions($userId): JsonResponse
     {
         try {
@@ -185,51 +160,27 @@ class PermissionController extends Controller
                 ], 404);
             }
 
-            // Récupérer les données de permission
-            $permissionData = UserMeta::where('user_id', $userId)
-                ->where('meta_key', 'permission_data')
-                ->first();
-
-            if (!$permissionData || !$permissionData->meta_value) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Aucune permission trouvée',
-                    'data' => [
-                        'user_id' => $userId,
-                        'role' => null,
-                        'subRoles' => [],
-                        'permissions' => []
-                    ]
-                ]);
-            }
-
-            $data = json_decode($permissionData->meta_value, true);
+            $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
 
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'user_id' => $userId,
-                    'role' => $data['role'] ?? null,
-                    'subRoles' => $data['subRoles'] ?? [],
-                    'permissions' => $data['permissions'] ?? [],
-                    'updatedAt' => $data['updatedAt'] ?? null
+                    'user_id'     => $userId,
+                    'role'        => $user->role,
+                    'subRoles'    => json_decode($user->sub_role) ?? [],
+                    'permissions' => $permissions,
                 ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la récupération des permissions',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
 
-    /**
-     * Supprimer toutes les permissions d'un utilisateur
-     * @param int $userId
-     * @return JsonResponse
-     */
+    // ✅ DELETE /permissions/{userId}
     public function deletePermissions($userId): JsonResponse
     {
         try {
@@ -242,9 +193,8 @@ class PermissionController extends Controller
                 ], 404);
             }
 
-            // Supprimer toutes les meta_keys liées aux permissions
             UserMeta::where('user_id', $userId)
-                ->whereIn('meta_key', ['role', 'sub_roles', 'permissions', 'permission_data'])
+                ->where('meta_key', 'permissions')
                 ->delete();
 
             return response()->json([
@@ -252,22 +202,16 @@ class PermissionController extends Controller
                 'message' => 'Permissions supprimées avec succès',
                 'user_id' => $userId
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la suppression des permissions',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
 
-    /**
-     * Vérifier si un utilisateur a une permission spécifique
-     * @param int $userId
-     * @param string $permission
-     * @return JsonResponse
-     */
+    // ✅ GET /permissions/{userId}/has/{permission}
     public function hasPermission($userId, $permission): JsonResponse
     {
         try {
@@ -280,34 +224,20 @@ class PermissionController extends Controller
                 ], 404);
             }
 
-            $permissionData = UserMeta::where('user_id', $userId)
-                ->where('meta_key', 'permission_data')
-                ->first();
-
-            if (!$permissionData || !$permissionData->meta_value) {
-                return response()->json([
-                    'success' => true,
-                    'hasPermission' => false,
-                    'message' => 'Aucune permission trouvée pour cet utilisateur'
-                ]);
-            }
-
-            $data = json_decode($permissionData->meta_value, true);
-            $permissions = $data['permissions'] ?? [];
+            $permissions   = json_decode($user->getMeta('permissions'), true) ?? [];
             $hasPermission = in_array($permission, $permissions);
 
             return response()->json([
-                'success' => true,
+                'success'       => true,
                 'hasPermission' => $hasPermission,
-                'permission' => $permission,
-                'user_id' => $userId
+                'permission'    => $permission,
+                'user_id'       => $userId
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la vérification de la permission',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
