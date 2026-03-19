@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use App\Models\CotisationMembre;
 
 class User extends Authenticatable
 {
@@ -67,5 +68,10 @@ class User extends Authenticatable
             ['meta_key' => $key],
             ['meta_value' => $value]
         );
+    }
+
+    public function cotisationMembres(): HasMany
+    {
+        return $this->hasMany(CotisationMembre::class);
     }
 }

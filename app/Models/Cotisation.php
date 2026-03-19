@@ -3,21 +3,30 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Casts\AsArrayObject;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Cotisation extends Model
 {
     protected $fillable = [
+        'nom',
+        'description',
+        'montant',
+        'date_debut',
+        'date_fin',
         'statut',
+        'meta',
+    ];
+
+    protected $casts = [
+        'date_debut' => 'date',
+        'date_fin'   => 'date',
+        'montant'    => 'decimal:2',
+        'meta'       => AsArrayObject::class,
     ];
 
     // ─── Relations ────────────────────────────────────────────
-
-    public function metas(): HasMany
-    {
-        return $this->hasMany(CotisationMeta::class);
-    }
 
     public function cotisationMembres(): HasMany
     {
@@ -35,27 +44,28 @@ class Cotisation extends Model
 
     public function getMeta(string $key, mixed $default = null): mixed
     {
-        $meta = $this->metas->firstWhere('meta_key', $key);
-        return $meta ? $meta->meta_value : $default;
+        return $this->meta?->offsetGet($key) ?? $default;
     }
 
     public function setMeta(string $key, mixed $value): void
     {
-        $this->metas()->updateOrCreate(
-            ['meta_key' => $key],
-            ['meta_value' => $value]
-        );
+        $this->meta ??= new \ArrayObject();
+        $this->meta[$key] = $value;
+        $this->save();
     }
 
     public function setMetas(array $metas): void
     {
+        $this->meta ??= new \ArrayObject();
         foreach ($metas as $key => $value) {
-            $this->setMeta($key, $value);
+            $this->meta[$key] = $value;
         }
+        $this->save();
     }
 
     public function deleteMeta(string $key): void
     {
-        $this->metas()->where('meta_key', $key)->delete();
+        unset($this->meta[$key]);
+        $this->save();
     }
 }

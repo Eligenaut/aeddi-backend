@@ -18,7 +18,7 @@ return new class extends Migration
             $table->enum('statut', ['non_paye', 'paye', 'reste'])->default('non_paye');
             $table->decimal('montant_restant', 10, 2)->nullable();
             $table->timestamps();
-            
+
             // Index unique pour éviter les doublons
             $table->unique(['user_id', 'cotisation_id']);
         });

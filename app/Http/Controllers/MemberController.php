@@ -23,33 +23,41 @@ class MemberController extends Controller
 
     private function formatMember(User $member): array
     {
+        $cotisations = $member->cotisationMembres ?? collect();
+        $cotisationStats = [
+            'total'  => $cotisations->count(),
+            'payees' => $cotisations->where('statut', 'paye')->count(),
+        ];
+
         return [
-            'id'            => $member->id,
-            'name'          => $member->name                        ?? '',
-            'nom'           => $member->getMeta('nom')              ?? '',
-            'prenom'        => $member->getMeta('prenom')           ?? '',
-            'email'         => $member->email                       ?? '',
-            'avatar'        => $this->getAvatarUrl($member),
-            'role'          => strtoupper($member->role ?? 'MEMBER'),
-            'sub_role'      => json_decode($member->sub_role ?? '[]') ?? [],
-            'etablissement' => $member->getMeta('etablissement')    ?? '',
-            'parcours'      => $member->getMeta('parcours')         ?? '',
-            'niveau'        => $member->getMeta('niveau')           ?? '',
-            'promotion'     => $member->getMeta('promotion')        ?? '',
-            'logement'      => $member->getMeta('logement')         ?? '',
-            'bloc_campus'   => $member->getMeta('bloc_campus')      ?? '',
-            'quartier'      => $member->getMeta('quartier')         ?? '',
-            'telephone'     => $member->getMeta('telephone')        ?? '',
-            'statut'        => $member->email_verified_at ? 'actif' : 'en_attente',
-            'created_at'    => $member->created_at->toDateTimeString(),
-            'updated_at'    => $member->updated_at->toDateTimeString(),
+            'id'               => $member->id,
+            'name'             => $member->name                        ?? '',
+            'nom'              => $member->getMeta('nom')              ?? '',
+            'prenom'           => $member->getMeta('prenom')           ?? '',
+            'email'            => $member->email                       ?? '',
+            'avatar'           => $this->getAvatarUrl($member),
+            'role'             => strtoupper($member->role ?? 'MEMBER'),
+            'sub_role'         => json_decode($member->sub_role ?? '[]') ?? [],
+            'etablissement'    => $member->getMeta('etablissement')    ?? '',
+            'parcours'         => $member->getMeta('parcours')         ?? '',
+            'niveau'           => $member->getMeta('niveau')           ?? '',
+            'promotion'        => $member->getMeta('promotion')        ?? '',
+            'logement'         => $member->getMeta('logement')         ?? '',
+            'bloc_campus'      => $member->getMeta('bloc_campus')      ?? '',
+            'quartier'         => $member->getMeta('quartier')         ?? '',
+            'telephone'        => $member->getMeta('telephone')        ?? '',
+            'statut'           => $member->email_verified_at ? 'actif' : 'en_attente',
+            'cotisation_stats' => $cotisationStats,
+            'created_at'       => $member->created_at->toDateTimeString(),
+            'updated_at'       => $member->updated_at->toDateTimeString(),
         ];
     }
 
     public function index(): JsonResponse
     {
-        $members = User::where('role', '!=', 'ADMIN')->get();
-        $members->load('meta');
+        $members = User::where('role', '!=', 'ADMIN')
+            ->with(['meta', 'cotisationMembres'])
+            ->get();
 
         $data = $members->map(fn(User $member) => $this->formatMember($member));
 
@@ -183,7 +191,6 @@ class MemberController extends Controller
                 'message' => 'Membre mis à jour avec succès',
                 'data'    => $this->formatMember($member)
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,

@@ -43,7 +43,6 @@ Route::middleware('auth:sanctum')->get('/dashboard-stats', [MemberController::cl
 Route::middleware('auth:sanctum')->get('/export/users', [ExportController::class, 'exportUsers']);
 Route::middleware('auth:sanctum')->get('/export/users/xlsx', [ExportController::class, 'exportUsersXlsx']);
 
-// Cotisations
 Route::middleware('auth:sanctum')->prefix('cotisations')->group(function () {
     Route::get('/', [CotisationController::class, 'index']);
     Route::post('/', [CotisationController::class, 'store']);
@@ -71,8 +70,7 @@ Route::middleware('auth:sanctum')->prefix('activites')->group(function () {
     Route::get('/{id}', [ActiviteController::class, 'show']);
     Route::put('/{id}', [ActiviteController::class, 'update']);
     Route::delete('/{id}', [ActiviteController::class, 'destroy']);
-    Route::put('/{activiteId}/member/{userId}/participation', [ActiviteController::class, 'updateMemberParticipation']);
-    Route::delete('activites/{id}/galerie/{index}', [ActiviteController::class, 'deleteGalerieImage']);
+    Route::delete('/{id}/galerie/{index}', [ActiviteController::class, 'deleteGalerieImage']);
 });
 
 Route::prefix('accueil')->group(function () {
