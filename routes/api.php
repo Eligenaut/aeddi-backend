@@ -72,6 +72,7 @@ Route::middleware('auth:sanctum')->prefix('activites')->group(function () {
     Route::put('/{id}', [ActiviteController::class, 'update']);
     Route::delete('/{id}', [ActiviteController::class, 'destroy']);
     Route::put('/{activiteId}/member/{userId}/participation', [ActiviteController::class, 'updateMemberParticipation']);
+    Route::delete('activites/{id}/galerie/{index}', [ActiviteController::class, 'deleteGalerieImage']);
 });
 
 Route::prefix('accueil')->group(function () {

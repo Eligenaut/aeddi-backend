@@ -3,59 +3,55 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Casts\AsArrayObject;
 
 class Activite extends Model
 {
     protected $fillable = [
+        'nom',
+        'description',
+        'date_debut',
+        'date_fin',
+        'lieu',
+        'image_lieu',
+        'categorie',
         'statut',
+        'image',
+        'meta',
     ];
 
-    // ─── Relations ────────────────────────────────────────────
-
-    public function metas(): HasMany
-    {
-        return $this->hasMany(ActiviteMeta::class);
-    }
-
-    public function membres(): BelongsToMany
-    {
-        return $this->belongsToMany(User::class, 'activite_membre')
-                    ->withPivot('statut_participation', 'commentaire')
-                    ->withTimestamps();
-    }
-
-    public function activiteMembres(): HasMany
-    {
-        return $this->hasMany(ActiviteMembre::class);
-    }
+    protected $casts = [
+        'date_debut' => 'date',
+        'date_fin'   => 'date',
+        'meta'       => AsArrayObject::class,
+    ];
 
     // ─── Helpers meta ─────────────────────────────────────────
 
     public function getMeta(string $key, mixed $default = null): mixed
     {
-        $meta = $this->metas->firstWhere('meta_key', $key);
-        return $meta ? $meta->meta_value : $default;
+        return $this->meta?->offsetGet($key) ?? $default;
     }
 
     public function setMeta(string $key, mixed $value): void
     {
-        $this->metas()->updateOrCreate(
-            ['meta_key' => $key],
-            ['meta_value' => $value]
-        );
+        $this->meta ??= new \ArrayObject();
+        $this->meta[$key] = $value;
+        $this->save();
     }
 
     public function setMetas(array $metas): void
     {
+        $this->meta ??= new \ArrayObject();
         foreach ($metas as $key => $value) {
-            $this->setMeta($key, $value);
+            $this->meta[$key] = $value;
         }
+        $this->save();
     }
 
     public function deleteMeta(string $key): void
     {
-        $this->metas()->where('meta_key', $key)->delete();
+        unset($this->meta[$key]);
+        $this->save();
     }
 }

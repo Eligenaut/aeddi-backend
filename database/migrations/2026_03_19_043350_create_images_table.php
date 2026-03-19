@@ -8,15 +8,18 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('activites', function (Blueprint $table) {
+        Schema::create('images', function (Blueprint $table) {
             $table->id();
-            $table->string('statut')->default('actif');
+            $table->morphs('imageable'); 
+            $table->string('path');
+            $table->string('titre')->nullable();
+            $table->integer('ordre')->default(0);
             $table->timestamps();
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('activites');
+        Schema::dropIfExists('images');
     }
 };
