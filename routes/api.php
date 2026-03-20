@@ -87,7 +87,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
 // FCM Token
 Route::post('/fcm-token', [NotificationController::class, 'saveFcmToken'])->middleware('auth:sanctum');
 
-// Notifications (admin)
+// Notifications
 Route::post('/notifications/send-all', [NotificationController::class, 'sendToAll'])->middleware('auth:sanctum');
 Route::post('/notifications/send-user/{id}', [NotificationController::class, 'sendToUser'])->middleware('auth:sanctum');
 
