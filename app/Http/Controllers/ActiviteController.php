@@ -23,18 +23,7 @@ class ActiviteController extends Controller
 
     private function uploadImage($file, string $dossier): string
     {
-        $cloudinary = new \Cloudinary\Cloudinary([
-            'cloud' => [
-                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-                'api_key'    => env('CLOUDINARY_API_KEY'),
-                'api_secret' => env('CLOUDINARY_API_SECRET'),
-            ],
-            'url' => [
-                'secure' => true,
-            ],
-        ]);
-
-        $result = $cloudinary->uploadApi()->upload($file->getRealPath(), [
+        $result = cloudinary()->uploadApi()->upload($file->getRealPath(), [
             'folder' => 'aeddi/' . $dossier,
         ]);
 
