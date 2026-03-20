@@ -23,10 +23,22 @@ class ActiviteController extends Controller
 
     private function uploadImage($file, string $dossier): string
     {
-        $result = Cloudinary::upload($file->getRealPath(), [
+        $cloudinary = new \Cloudinary\Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
+            'url' => [
+                'secure' => true,
+            ],
+        ]);
+
+        $result = $cloudinary->uploadApi()->upload($file->getRealPath(), [
             'folder' => 'aeddi/' . $dossier,
         ]);
-        return $result->getSecurePath();
+
+        return $result['secure_url'];
     }
 
     private function deleteImage(?string $path): void
@@ -199,8 +211,15 @@ class ActiviteController extends Controller
         }
 
         $activite->update($request->only([
-            'nom', 'description', 'date_debut', 'date_fin',
-            'lieu', 'categorie', 'statut', 'image', 'image_lieu'
+            'nom',
+            'description',
+            'date_debut',
+            'date_fin',
+            'lieu',
+            'categorie',
+            'statut',
+            'image',
+            'image_lieu'
         ]));
 
         return response()->json([
