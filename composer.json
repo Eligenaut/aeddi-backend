@@ -12,7 +12,8 @@
         "laravel/sanctum": "^4.2",
         "laravel/socialite": "*",
         "laravel/tinker": "^2.10.1",
-        "maatwebsite/excel": "^3.1"
+        "maatwebsite/excel": "^3.1",
+        "resend/resend-laravel": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
