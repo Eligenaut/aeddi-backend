@@ -247,12 +247,14 @@ class AuthController extends Controller
                 ['token' => Hash::make($token), 'created_at' => now()]
             );
 
-            $resetUrl = $request->input('url_frontend') . '/create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
+            $webUrl = $request->input('url_frontend') . '/create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
+            $appUrl = 'aeddi://create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
             try {
                 Mail::send('emails.create_password', [
-                    'resetUrl' => $resetUrl,
-                    'user'     => $user
+                    'webUrl' => $webUrl,
+                    'appUrl' => $appUrl,
+                    'user'   => $user
                 ], function ($message) use ($user) {
                     $message->to($user->email)->subject('Créez votre mot de passe - AEDDI');
                 });
@@ -392,11 +394,13 @@ class AuthController extends Controller
                 ['token' => Hash::make($token), 'created_at' => now()]
             );
 
-            $resetUrl = $request->input('url_frontend') . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
+            $webUrl = $request->input('url_frontend') . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
+            $appUrl = 'aeddi://reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
             Mail::send('emails.password_reset', [
-                'resetUrl' => $resetUrl,
-                'user'     => $user
+                'webUrl' => $webUrl,
+                'appUrl' => $appUrl,
+                'user'   => $user
             ], function ($message) use ($user) {
                 $message->to($user->email)->subject('Réinitialisation de votre mot de passe - AEDDI');
             });

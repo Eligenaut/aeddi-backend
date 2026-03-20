@@ -22,27 +22,31 @@
             <p>Nous avons reçu une demande de réinitialisation de votre mot de passe. Cliquez sur le bouton ci-dessous pour réinitialiser votre mot de passe.</p>
 
             <div style="text-align: center;">
-                <a href="{{ $resetUrl }}" class="btn">Réinitialiser mon mot de passe</a>
+                <a href="{{ $appUrl }}"
+                   onclick="setTimeout(function(){ window.location='{{ $webUrl }}'; }, 1500); return true;"
+                   class="btn">
+                   Réinitialiser mon mot de passe
+                </a>
             </div>
 
             <div class="warning">
-                <p><strong>⚠️ Attention :</strong> Ce lien expire dans <strong>24 heures</strong>. Après cette période, vous devrez demander un nouveau lien de réinitialisation.</p>
+                <p><strong>⚠️ Attention :</strong> Ce lien expire dans <strong>24 heures</strong>.</p>
             </div>
 
             <p style="color: #666; font-size: 14px;">
-                Si vous n'avez pas demandé cette réinitialisation, veuillez ignorer cet email. Votre compte restera sécurisé.
+                Si vous n'avez pas demandé cette réinitialisation, veuillez ignorer cet email.
             </p>
 
             <p style="color: #888; font-size: 12px; margin-top: 20px;">
                 <strong>Ou copiez ce lien :</strong><br>
-                <span style="word-break: break-all;">{{ $resetUrl }}</span>
+                <span style="word-break: break-all;">{{ $webUrl }}</span>
             </p>
 
             <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;">
 
             <p style="color: #666; font-size: 13px;">
                 <strong>Besoin d'aide ?</strong><br>
-                Si vous rencontrez des problèmes avec le lien, veuillez contacter l'équipe AEDDI.
+                Si vous rencontrez des problèmes, veuillez contacter l'équipe AEDDI.
             </p>
         </div>
         <div class="footer">© {{ date('Y') }} AEDDI - Tous droits réservés</div>
