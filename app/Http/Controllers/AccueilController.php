@@ -8,9 +8,17 @@ use Illuminate\Http\Request;
 
 class AccueilController extends Controller
 {
-    /**
-     * Retourne les activités publiques (sans authentification)
-     */
+    // ─── Helper URL ───────────────────────────────────────────
+
+    private function getUrl(?string $path): ?string
+    {
+        if (!$path) return null;
+        if (str_starts_with($path, 'http')) return $path;
+        return env('APP_URL') . '/storage/' . $path;
+    }
+
+    // ─── Activités publiques ──────────────────────────────────
+
     public function activites()
     {
         $activites = Activite::orderBy('date_debut', 'desc')
@@ -25,9 +33,7 @@ class AccueilController extends Controller
                     'statut'      => $activite->statut,
                     'lieu'        => $activite->lieu,
                     'categorie'   => $activite->categorie ?? 'Autre',
-                    'image'       => $activite->image
-                                        ? asset('storage/' . $activite->image)
-                                        : null,
+                    'image'       => $this->getUrl($activite->image),
                 ];
             });
 
@@ -37,28 +43,26 @@ class AccueilController extends Controller
         ]);
     }
 
-    /**
-     * Retourne les membres du bureau (sans authentification)
-     */
+    // ─── Membres du bureau ────────────────────────────────────
+
     public function bureau()
     {
         $membres = User::where('role', 'bureau')
             ->orderBy('sub_role')
             ->get()
             ->map(function ($user) {
-                // Priorité : avatar Google → profile_image uploadée → null
-                $photo = $user->avatar
-                    ?? ($user->profile_image ? asset('storage/' . $user->profile_image) : null);
+                $photo = $this->getUrl($user->avatar)
+                    ?? $this->getUrl($user->profile_image);
 
                 return [
-                    'id'           => $user->id,
-                    'nom'          => $user->nom,
-                    'prenom'       => $user->prenom,
-                    'name'         => $user->name,
-                    'sub_role'     => $user->sub_role,
-                    'etablissement'=> $user->etablissement,
-                    'telephone'    => $user->telephone,
-                    'photo'        => $photo,
+                    'id'            => $user->id,
+                    'nom'           => $user->nom,
+                    'prenom'        => $user->prenom,
+                    'name'          => $user->name,
+                    'sub_role'      => $user->sub_role,
+                    'etablissement' => $user->etablissement,
+                    'telephone'     => $user->telephone,
+                    'photo'         => $photo,
                 ];
             });
 
