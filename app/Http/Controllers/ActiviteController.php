@@ -13,7 +13,10 @@ class ActiviteController extends Controller
 
     private function getUrl(string $path): string
     {
-        return $path; // Cloudinary retourne déjà l'URL complète
+        if (str_starts_with($path, 'http')) {
+            return $path;
+        }
+        return env('APP_URL') . '/storage/' . $path;
     }
 
     // ─── Helper upload image ──────────────────────────────────
@@ -29,11 +32,14 @@ class ActiviteController extends Controller
     private function deleteImage(?string $path): void
     {
         if ($path) {
-            // Extraire le public_id depuis l'URL Cloudinary
-            preg_match('/\/aeddi\/.*\/([^.]+)/', $path, $matches);
-            if (!empty($matches[0])) {
-                $publicId = ltrim($matches[0], '/');
-                Cloudinary::destroy($publicId);
+            if (str_starts_with($path, 'http') && str_contains($path, 'cloudinary')) {
+                preg_match('/\/aeddi\/.*\/([^.]+)/', $path, $matches);
+                if (!empty($matches[0])) {
+                    $publicId = ltrim($matches[0], '/');
+                    Cloudinary::destroy($publicId);
+                }
+            } else {
+                Storage::disk('public')->delete($path);
             }
         }
     }
@@ -49,11 +55,17 @@ class ActiviteController extends Controller
             'date_debut'  => $activite->date_debut->toDateString(),
             'date_fin'    => $activite->date_fin->toDateString(),
             'lieu'        => $activite->lieu,
-            'image_lieu'  => $activite->image_lieu ?: null,
+            'image_lieu'  => $activite->image_lieu
+                ? $this->getUrl($activite->image_lieu)
+                : null,
             'categorie'   => $activite->categorie,
             'statut'      => $activite->statut,
-            'image'       => $activite->image ?: null,
-            'galerie'     => collect($activite->getMeta('galerie', []))->values(),
+            'image'       => $activite->image
+                ? $this->getUrl($activite->image)
+                : null,
+            'galerie'     => collect($activite->getMeta('galerie', []))
+                ->map(fn($path) => $this->getUrl($path))
+                ->values(),
             'created_at'  => $activite->created_at,
         ];
     }
@@ -253,7 +265,9 @@ class ActiviteController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Image supprimée avec succès',
-            'galerie' => collect($activite->getMeta('galerie', []))->values(),
+            'galerie' => collect($activite->getMeta('galerie', []))
+                ->map(fn($path) => $this->getUrl($path))
+                ->values(),
         ]);
     }
 }
