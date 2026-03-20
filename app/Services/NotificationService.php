@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Google\Auth\Credentials\ServiceAccountCredentials;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class NotificationService
@@ -32,7 +31,7 @@ class NotificationService
         try {
             $accessToken = $this->getAccessToken();
 
-            $message = [
+            $message = json_encode([
                 'message' => [
                     'token' => $fcmToken,
                     'notification' => [
@@ -41,17 +40,26 @@ class NotificationService
                     ],
                     'data' => array_map('strval', $data),
                 ]
-            ];
+            ]);
 
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $accessToken,
-                'Content-Type'  => 'application/json',
-            ])->post(
-                "https://fcm.googleapis.com/v1/projects/{$this->projectId}/messages:send",
-                $message
-            );
+            $ch = curl_init("https://fcm.googleapis.com/v1/projects/{$this->projectId}/messages:send");
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $message);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Bearer ' . $accessToken,
+                'Content-Type: application/json',
+            ]);
 
-            return $response->successful();
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            // curl_close supprimé ✅
+
+            if ($httpCode !== 200) {
+                Log::error('FCM Error response: ' . $response);
+            }
+
+            return $httpCode === 200;
         } catch (\Exception $e) {
             Log::error('FCM Error: ' . $e->getMessage());
             return false;
