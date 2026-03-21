@@ -37,10 +37,7 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth-token')->plainTextToken;
 
-        $avatarUrl = $user->avatar;
-        if (!$avatarUrl && $user->getMeta('profile_image')) {
-            $avatarUrl = asset('storage/' . $user->getMeta('profile_image'));
-        }
+        $avatarUrl = $user->avatar ?? '';
 
         $permissions = [];
         if (!$user->isAdmin()) {
@@ -201,6 +198,7 @@ class AuthController extends Controller
             }
 
             // Image
+            // Image → Cloudinary
             if ($request->has('image') && !empty($request->input('image'))) {
                 $imageBase64 = $request->input('image');
                 if (str_starts_with($imageBase64, 'data:image/')) {
@@ -210,26 +208,34 @@ class AuthController extends Controller
                             $imageData = base64_decode($imageParts[1], true);
                             if ($imageData === false) throw new \Exception('Décodage base64 échoué');
 
-                            $extension = 'jpg';
-                            $imageType = $request->input('imageType', '');
-                            if (str_contains($imageType, 'png'))       $extension = 'png';
-                            elseif (str_contains($imageType, 'webp'))  $extension = 'webp';
+                            // Sauvegarde temporaire
+                            $tmpFile = tempnam(sys_get_temp_dir(), 'profile_');
+                            file_put_contents($tmpFile, $imageData);
 
-                            $imagePath = 'profile_images/profile_' . $user->id . '.' . $extension;
-                            $fullPath  = storage_path('app/public/' . $imagePath);
-                            $directory = dirname($fullPath);
+                            \Cloudinary\Configuration\Configuration::instance([
+                                'cloud' => [
+                                    'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                                    'api_key'    => env('CLOUDINARY_API_KEY'),
+                                    'api_secret' => env('CLOUDINARY_API_SECRET'),
+                                ],
+                                'url' => ['secure' => true],
+                            ]);
 
-                            if (!file_exists($directory)) mkdir($directory, 0755, true);
+                            $api = new \Cloudinary\Api\Upload\UploadApi();
+                            $result = $api->upload($tmpFile, [
+                                'folder'    => 'aeddi/membres',
+                                'public_id' => 'profile_' . $user->id,
+                                'overwrite' => true,
+                            ]);
 
-                            file_put_contents($fullPath, $imageData);
+                            unlink($tmpFile);
 
-                            // ✅ Seulement avatar, plus profile_image
-                            $user->update(['avatar' => asset('storage/' . $imagePath)]);
+                            $user->update(['avatar' => $result['secure_url']]);
 
-                            Log::info('Image profil créée', ['user_id' => $user->id, 'path' => $imagePath]);
+                            Log::info('Image profil uploadée sur Cloudinary', ['user_id' => $user->id]);
                         }
                     } catch (\Exception $e) {
-                        Log::warning('Erreur traitement image: ' . $e->getMessage(), ['user_id' => $user->id]);
+                        Log::warning('Erreur upload image Cloudinary: ' . $e->getMessage(), ['user_id' => $user->id]);
                     }
                 }
             }
@@ -241,12 +247,14 @@ class AuthController extends Controller
                 ['token' => Hash::make($token), 'created_at' => now()]
             );
 
-            $resetUrl = $request->input('url_frontend') . '/create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
+            $webUrl = $request->input('url_frontend') . '/create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
+            $appUrl = 'aeddi://create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
             try {
                 Mail::send('emails.create_password', [
-                    'resetUrl' => $resetUrl,
-                    'user'     => $user
+                    'webUrl' => $webUrl,
+                    'appUrl' => $appUrl,
+                    'user'   => $user
                 ], function ($message) use ($user) {
                     $message->to($user->email)->subject('Créez votre mot de passe - AEDDI');
                 });
@@ -386,11 +394,13 @@ class AuthController extends Controller
                 ['token' => Hash::make($token), 'created_at' => now()]
             );
 
-            $resetUrl = $request->input('url_frontend') . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
+            $webUrl = $request->input('url_frontend') . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
+            $appUrl = 'aeddi://reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
             Mail::send('emails.password_reset', [
-                'resetUrl' => $resetUrl,
-                'user'     => $user
+                'webUrl' => $webUrl,
+                'appUrl' => $appUrl,
+                'user'   => $user
             ], function ($message) use ($user) {
                 $message->to($user->email)->subject('Réinitialisation de votre mot de passe - AEDDI');
             });

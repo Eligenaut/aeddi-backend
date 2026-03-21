@@ -10,6 +10,37 @@ use Illuminate\Support\Facades\Storage;
 
 class MemberController extends Controller
 {
+    // ─── Helper upload image Cloudinary ──────────────────────
+
+    private function uploadImageToCloudinary(string $imageData, string $publicId): string
+    {
+        \Cloudinary\Configuration\Configuration::instance([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
+            'url' => ['secure' => true],
+        ]);
+
+        // Sauvegarde temporaire
+        $tmpFile = tempnam(sys_get_temp_dir(), 'profile_');
+        file_put_contents($tmpFile, $imageData);
+
+        $api = new \Cloudinary\Api\Upload\UploadApi();
+        $result = $api->upload($tmpFile, [
+            'folder'    => 'aeddi/membres',
+            'public_id' => $publicId,
+            'overwrite' => true,
+        ]);
+
+        unlink($tmpFile);
+
+        return $result['secure_url'];
+    }
+
+    // ─── Helper avatar URL ────────────────────────────────────
+
     private function getAvatarUrl(User $member): string
     {
         if ($member->avatar) {
@@ -137,6 +168,7 @@ class MemberController extends Controller
                 $oldRole     = $member->role;
                 $oldSubRole  = json_decode($member->sub_role ?? '[]', true)[0] ?? null;
                 $newSubRole  = $newSubRoles[0] ?? null;
+
                 if ($newRole !== $oldRole || $newSubRole !== $oldSubRole) {
                     $newPermissions = RolePermission::findPermissions($newRole, $newSubRole);
                     $member->setMeta('permissions', json_encode($newPermissions));
@@ -165,21 +197,17 @@ class MemberController extends Controller
                 $member->setMeta($key, $value);
             }
 
+            // ─── Upload photo de profil vers Cloudinary ───────
             if (!empty($validated['image'])) {
                 $imageBase64 = $validated['image'];
                 if (str_starts_with($imageBase64, 'data:image/')) {
                     $imageParts = explode(',', $imageBase64);
                     if (count($imageParts) === 2) {
                         $imageData = base64_decode($imageParts[1], true);
-                        $extension = 'jpg';
-                        $imageType = $validated['imageType'] ?? '';
+                        $publicId  = 'profile_' . $member->id;
 
-                        if (str_contains($imageType, 'png'))      $extension = 'png';
-                        elseif (str_contains($imageType, 'webp')) $extension = 'webp';
-
-                        $imagePath = 'profile_images/profile_' . $member->id . '.' . $extension;
-                        Storage::disk('public')->put($imagePath, $imageData);
-                        $member->update(['avatar' => asset('storage/' . $imagePath)]);
+                        $avatarUrl = $this->uploadImageToCloudinary($imageData, $publicId);
+                        $member->update(['avatar' => $avatarUrl]);
                     }
                 }
             }
