@@ -4,14 +4,14 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ActiviteController;
 use App\Http\Controllers\CotisationController;
 use Laravel\Socialite\Facades\Socialite;
-use App\Http\Controllers\Auth\GoogleAuthController;
+use App\Http\Controllers\AuthController;
 
 Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('/auth/google', [GoogleAuthController::class, 'redirect']);
-Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback']);
+Route::get('auth/google',          [AuthController::class, 'redirectToGoogle']);
+Route::get('auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
 
 // Pages statiques pour le SEO
 Route::get('/about', function () {
@@ -31,7 +31,7 @@ Route::get('/sitemap.xml', function () {
     $baseUrl = config('app.url');
     $sitemap = '<?xml version="1.0" encoding="UTF-8"?>';
     $sitemap .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
-    
+
     // Page d'accueil
     $sitemap .= '<url>';
     $sitemap .= '<loc>' . $baseUrl . '/</loc>';
@@ -39,7 +39,7 @@ Route::get('/sitemap.xml', function () {
     $sitemap .= '<changefreq>daily</changefreq>';
     $sitemap .= '<priority>1.0</priority>';
     $sitemap .= '</url>';
-    
+
     // Pages statiques
     $pages = ['/about', '/contact', '/activities'];
     foreach ($pages as $page) {
@@ -50,9 +50,9 @@ Route::get('/sitemap.xml', function () {
         $sitemap .= '<priority>0.8</priority>';
         $sitemap .= '</url>';
     }
-    
+
     $sitemap .= '</urlset>';
-    
+
     return response($sitemap, 200)->header('Content-Type', 'text/xml');
 });
 
