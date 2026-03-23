@@ -79,48 +79,50 @@ class AuthController extends Controller
 
     public function handleGoogleCallback(Request $request)
     {
-        Log::info('Callback reçu', [
-            'code'  => $request->get('code'),
-            'state' => $request->get('state'),
-            'error' => $request->get('error'),
-        ]);
+        try {
+            $googleUser = Socialite::driver('google')->user();
 
-        $googleUser = Socialite::driver('google')->user();
+            Log::info('Google user OK', ['email' => $googleUser->getEmail()]);
 
-        Log::info('Google user OK', ['email' => $googleUser->getEmail()]);
+            $user = User::where('email', $googleUser->getEmail())->first();
 
-        $user = User::where('email', $googleUser->getEmail())->first();
+            if (!$user) {
+                return redirect(env('FRONTEND_URL') . '/login?error=email_non_autorise');
+            }
 
-        if (!$user) {
-            return redirect(env('FRONTEND_URL') . '/login?error=email_non_autorise');
+            if (empty($user->avatar) && $googleUser->getAvatar()) {
+                $user->update(['avatar' => $googleUser->getAvatar()]);
+            }
+
+            $user->load('meta');
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            $permissions = [];
+            if (!$user->isAdmin()) {
+                $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
+            }
+
+            $userData = urlencode(json_encode([
+                'id'            => $user->id,
+                'name'          => $user->name,
+                'nom'           => $user->getMeta('nom') ?? '',
+                'prenom'        => $user->getMeta('prenom') ?? '',
+                'email'         => $user->email,
+                'avatar'        => $user->avatar ?? '',
+                'role'          => strtoupper($user->role ?? 'MEMBER'),
+                'sub_role'      => json_decode($user->sub_role ?? '[]') ?? [],
+                'permissions'   => $permissions,
+                'etablissement' => $user->getMeta('etablissement') ?? '',
+            ]));
+
+            return redirect(env('FRONTEND_URL') . '/auth/google/callback?token=' . $token . '&user=' . $userData);
+        } catch (\Exception $e) {
+            Log::error('Erreur Google OAuth', [
+                'message' => $e->getMessage(),
+                'line'    => $e->getLine(),
+            ]);
+            return redirect(env('FRONTEND_URL') . '/login?error=' . urlencode($e->getMessage()));
         }
-
-        if (empty($user->avatar) && $googleUser->getAvatar()) {
-            $user->update(['avatar' => $googleUser->getAvatar()]);
-        }
-
-        $user->load('meta');
-        $token = $user->createToken('auth-token')->plainTextToken;
-
-        $permissions = [];
-        if (!$user->isAdmin()) {
-            $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
-        }
-
-        $userData = urlencode(json_encode([
-            'id'            => $user->id,
-            'name'          => $user->name,
-            'nom'           => $user->getMeta('nom') ?? '',
-            'prenom'        => $user->getMeta('prenom') ?? '',
-            'email'         => $user->email,
-            'avatar'        => $user->avatar ?? '',
-            'role'          => strtoupper($user->role ?? 'MEMBER'),
-            'sub_role'      => json_decode($user->sub_role ?? '[]') ?? [],
-            'permissions'   => $permissions,
-            'etablissement' => $user->getMeta('etablissement') ?? '',
-        ]));
-
-        return redirect(env('FRONTEND_URL') . '/auth/google/callback?token=' . $token . '&user=' . $userData);
     }
 
     public function checkEmailAllowed(Request $request): JsonResponse
