@@ -23,6 +23,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->validateCsrfTokens(except: [
             'api/*',
+            'auth/google',
+            'auth/google/callback',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
