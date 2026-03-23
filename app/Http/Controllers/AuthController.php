@@ -83,9 +83,17 @@ class AuthController extends Controller
         try {
             $googleUser = Socialite::driver('google')->user();
 
+            // ─── DEBUG TEMPORAIRE ───────────────────────────
+            Log::info('Google user reçu', [
+                'email'  => $googleUser->getEmail(),
+                'name'   => $googleUser->getName(),
+            ]);
+            // ────────────────────────────────────────────────
+
             $user = User::where('email', $googleUser->getEmail())->first();
 
             if (!$user) {
+                Log::warning('Email non trouvé en base', ['email' => $googleUser->getEmail()]);
                 return redirect(env('FRONTEND_URL') . '/login?error=email_non_autorise');
             }
 
@@ -116,7 +124,13 @@ class AuthController extends Controller
 
             return redirect(env('FRONTEND_URL') . '/auth/google/callback?token=' . $token . '&user=' . $userData);
         } catch (\Exception $e) {
-            Log::error('Erreur Google OAuth: ' . $e->getMessage());
+            // ─── AFFICHE L'ERREUR EXACTE ─────────────────────
+            Log::error('Erreur Google OAuth', [
+                'message' => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+            ]);
+            // ─────────────────────────────────────────────────
             return redirect(env('FRONTEND_URL') . '/login?error=google_failed');
         }
     }
