@@ -115,7 +115,7 @@ class AuthController extends Controller
                 'etablissement' => $user->getMeta('etablissement') ?? '',
             ]));
 
-            return redirect(env('FRONTEND_URL') . '/auth/google/succes?token=' . $token . '&user=' . $userData);
+            return redirect(env('FRONTEND_URL') . '/auth/google/success?token=' . $token . '&user=' . $userData);
         } catch (\Exception $e) {
             Log::error('Erreur Google OAuth', [
                 'message' => $e->getMessage(),
