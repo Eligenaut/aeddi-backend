@@ -124,14 +124,13 @@ class AuthController extends Controller
 
             return redirect(env('FRONTEND_URL') . '/auth/google/callback?token=' . $token . '&user=' . $userData);
         } catch (\Exception $e) {
-            // ─── AFFICHE L'ERREUR EXACTE ─────────────────────
             Log::error('Erreur Google OAuth', [
                 'message' => $e->getMessage(),
                 'file'    => $e->getFile(),
                 'line'    => $e->getLine(),
             ]);
-            // ─────────────────────────────────────────────────
-            return redirect(env('FRONTEND_URL') . '/login?error=google_failed');
+
+            return redirect(env('FRONTEND_URL') . '/login?error=' . urlencode($e->getMessage()));
         }
     }
 
