@@ -628,22 +628,19 @@ class AuthController extends Controller
     public function addAuthorizedEmail(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|max:255'
+            'email' => 'required|email|max:255',
+            'role'  => 'required|in:NOVICE,MEMBER'
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Email invalide',
+                'message' => 'Données invalides',
                 'errors'  => $validator->errors()
             ], 422);
         }
 
-        $email = $request->input('email');
-
-        $existing = AuthorizedEmail::where('meta_key', 'email')
-            ->where('meta_value', $email)
-            ->first();
+        $existing = AuthorizedEmail::where('email', $request->input('email'))->first();
 
         if ($existing) {
             return response()->json([
@@ -654,9 +651,9 @@ class AuthController extends Controller
 
         try {
             AuthorizedEmail::create([
-                'user_id'    => Auth::id(),
-                'meta_key'   => 'email',
-                'meta_value' => $email,
+                'user_id' => Auth::id(),
+                'email'   => $request->input('email'),
+                'role'    => $request->input('role', 'NOVICE'),
             ]);
 
             return response()->json([

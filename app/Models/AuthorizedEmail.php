@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Casts\AsArrayObject;
 
 class AuthorizedEmail extends Model
 {
@@ -11,8 +12,13 @@ class AuthorizedEmail extends Model
 
     protected $fillable = [
         'user_id',
-        'meta_key',
-        'meta_value'
+        'email',
+        'role',
+        'meta',
+    ];
+
+    protected $casts = [
+        'meta' => AsArrayObject::class,
     ];
 
     public function user(): BelongsTo

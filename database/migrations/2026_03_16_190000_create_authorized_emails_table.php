@@ -10,9 +10,10 @@ return new class extends Migration
     {
         Schema::create('authorized_emails', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
-            $table->string('meta_key');
-            $table->text('meta_value')->nullable();
+            $table->foreignId('user_id')->nullable()->constrained()->onDelete('set null');
+            $table->string('email')->unique();
+            $table->string('role')->default('NOVICE');
+            $table->json('meta')->nullable();
             $table->timestamps();
         });
     }
