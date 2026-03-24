@@ -71,6 +71,67 @@ class AuthController extends Controller
         ]);
     }
 
+    // AuthController.php
+    public function googleMobile(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'id_token' => 'required|string',
+                'email'    => 'required|email',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['success' => false, 'message' => 'Données invalides'], 422);
+            }
+
+            // Vérifier le token via Google
+            $client = new \Google\Client(['client_id' => env('GOOGLE_CLIENT_ID')]);
+            $payload = $client->verifyIdToken($request->id_token);
+
+            if (!$payload) {
+                return response()->json(['success' => false, 'message' => 'Token Google invalide'], 401);
+            }
+
+            $user = User::where('email', $request->email)->first();
+
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'Email non autorisé'], 403);
+            }
+
+            if (empty($user->avatar) && $request->avatar) {
+                $user->update(['avatar' => $request->avatar]);
+            }
+
+            $user->load('meta');
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            $permissions = [];
+            if (!$user->isAdmin()) {
+                $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
+            }
+
+            return response()->json([
+                'success' => true,
+                'token'   => $token,
+                'user'    => [
+                    'id'            => $user->id,
+                    'name'          => $user->name,
+                    'nom'           => $user->getMeta('nom') ?? '',
+                    'prenom'        => $user->getMeta('prenom') ?? '',
+                    'email'         => $user->email,
+                    'avatar'        => $user->avatar ?? '',
+                    'role'          => strtoupper($user->role ?? 'MEMBER'),
+                    'sub_role'      => json_decode($user->sub_role ?? '[]') ?? [],
+                    'permissions'   => $permissions,
+                    'etablissement' => $user->getMeta('etablissement') ?? '',
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erreur Google Mobile:', ['message' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur serveur'], 500);
+        }
+    }
+
     // Redirige vers Google
     public function redirectToGoogle()
     {
