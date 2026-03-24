@@ -132,7 +132,7 @@ class AuthController extends Controller
         }
     }
 
-    // Redirige vers Google
+    // Redirige vers Google ici
     public function redirectToGoogle()
     {
         return Socialite::driver('google')->redirect();
