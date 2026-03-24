@@ -233,9 +233,7 @@ class AuthController extends Controller
             ], 409);
         }
 
-        $authorized = AuthorizedEmail::where('meta_key', 'email')
-            ->where('meta_value', $email)
-            ->first();
+        $authorized = AuthorizedEmail::where('email', $email)->first();
 
         if (!$authorized) {
             return response()->json([
@@ -670,12 +668,12 @@ class AuthController extends Controller
     public function getAuthorizedEmails(): JsonResponse
     {
         try {
-            $emails = AuthorizedEmail::where('meta_key', 'email')
-                ->orderBy('created_at', 'desc')
+            $emails = AuthorizedEmail::orderBy('created_at', 'desc')
                 ->get()
                 ->map(fn($item) => [
                     'id'    => $item->id,
-                    'email' => $item->meta_value,
+                    'email' => $item->email,
+                    'role'  => $item->role,
                 ]);
 
             return response()->json([
