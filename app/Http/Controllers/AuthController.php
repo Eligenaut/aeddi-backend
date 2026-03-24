@@ -15,42 +15,34 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Laravel\Socialite\Facades\Socialite;
-
-use Brevo\Client\Configuration;
-use Brevo\Client\Api\TransactionalEmailsApi;
-use Brevo\Client\Model\SendSmtpEmail;
-use Brevo\Client\Model\SendSmtpEmailTo;
-use Brevo\Client\Model\SendSmtpEmailSender;
+use Brevo\Brevo;
+use Brevo\TransactionalEmails\Requests\SendTransacEmailRequest;
+use Brevo\TransactionalEmails\Types\SendTransacEmailRequestSender;
+use Brevo\TransactionalEmails\Types\SendTransacEmailRequestToItem;
 
 class AuthController extends Controller
 {
     // ─── Helper : envoie un email via Brevo API ────────────────────────────────
     private function sendEmailViaBrevo(string $toEmail, string $toName, string $subject, string $htmlContent): void
     {
-        $config = Configuration::getDefaultConfiguration()
-            ->setApiKey('api-key', env('BREVO_API_KEY'));
+        $brevo = new Brevo(env('BREVO_API_KEY'));
 
-        $apiInstance = new TransactionalEmailsApi(
-            new \GuzzleHttp\Client(),
-            $config
+        $brevo->transactionalEmails->sendTransacEmail(
+            new SendTransacEmailRequest([
+                'subject'     => $subject,
+                'htmlContent' => $htmlContent,
+                'sender'      => new SendTransacEmailRequestSender([
+                    'name'  => 'AEDDI',
+                    'email' => 'brunobrayane@gmail.com'
+                ]),
+                'to' => [
+                    new SendTransacEmailRequestToItem([
+                        'email' => $toEmail,
+                        'name'  => $toName
+                    ])
+                ]
+            ])
         );
-
-        $sendSmtpEmail = new SendSmtpEmail([
-            'subject' => $subject,
-            'sender'  => new SendSmtpEmailSender([
-                'name'  => 'AEDDI',
-                'email' => 'brunobrayane@gmail.com'
-            ]),
-            'to' => [
-                new SendSmtpEmailTo([
-                    'email' => $toEmail,
-                    'name'  => $toName
-                ])
-            ],
-            'htmlContent' => $htmlContent
-        ]);
-
-        $apiInstance->sendTransacEmail($sendSmtpEmail);
     }
 
     public function login(Request $request)
