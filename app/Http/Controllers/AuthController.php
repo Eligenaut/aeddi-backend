@@ -528,10 +528,9 @@ class AuthController extends Controller
                 'message' => 'Un email de réinitialisation a été envoyé à ' . $email . '.'
             ], 200);
         } catch (\Exception $e) {
-            Log::error('Erreur envoi email reset: ' . $e->getMessage(), ['email' => $email]);
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de l\'envoi de l\'email'
+                'message' => $e->getMessage()
             ], 500);
         }
     }
