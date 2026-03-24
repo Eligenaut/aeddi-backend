@@ -9,7 +9,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -17,8 +16,43 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Laravel\Socialite\Facades\Socialite;
 
+use Brevo\Client\Configuration;
+use Brevo\Client\Api\TransactionalEmailsApi;
+use Brevo\Client\Model\SendSmtpEmail;
+use Brevo\Client\Model\SendSmtpEmailTo;
+use Brevo\Client\Model\SendSmtpEmailSender;
+
 class AuthController extends Controller
 {
+    // ─── Helper : envoie un email via Brevo API ────────────────────────────────
+    private function sendEmailViaBrevo(string $toEmail, string $toName, string $subject, string $htmlContent): void
+    {
+        $config = Configuration::getDefaultConfiguration()
+            ->setApiKey('api-key', env('BREVO_API_KEY'));
+
+        $apiInstance = new TransactionalEmailsApi(
+            new \GuzzleHttp\Client(),
+            $config
+        );
+
+        $sendSmtpEmail = new SendSmtpEmail([
+            'subject' => $subject,
+            'sender'  => new SendSmtpEmailSender([
+                'name'  => 'AEDDI',
+                'email' => 'brunobrayane@gmail.com'
+            ]),
+            'to' => [
+                new SendSmtpEmailTo([
+                    'email' => $toEmail,
+                    'name'  => $toName
+                ])
+            ],
+            'htmlContent' => $htmlContent
+        ]);
+
+        $apiInstance->sendTransacEmail($sendSmtpEmail);
+    }
+
     public function login(Request $request)
     {
         $request->validate([
@@ -71,7 +105,6 @@ class AuthController extends Controller
         ]);
     }
 
-    // AuthController.php
     public function googleMobile(Request $request): JsonResponse
     {
         try {
@@ -84,7 +117,6 @@ class AuthController extends Controller
                 return response()->json(['success' => false, 'message' => 'Données invalides'], 422);
             }
 
-            // Vérifier le token via Google
             $client = new \Google\Client(['client_id' => env('GOOGLE_CLIENT_ID')]);
             $payload = $client->verifyIdToken($request->id_token);
 
@@ -132,7 +164,6 @@ class AuthController extends Controller
         }
     }
 
-    // Redirige vers Google ici
     public function redirectToGoogle()
     {
         return Socialite::driver('google')->redirect();
@@ -287,7 +318,6 @@ class AuthController extends Controller
                 'sub_role' => json_encode([]),
             ]);
 
-            // Metas
             $metas = [
                 'nom'           => $request->input('nom'),
                 'prenom'        => $request->input('prenom'),
@@ -307,14 +337,11 @@ class AuthController extends Controller
                 }
             }
 
-            // ✅ Assigner les permissions MEMBER automatiquement
             $memberPermissions = RolePermission::findPermissions('MEMBER', null);
             if (!empty($memberPermissions)) {
                 $user->setMeta('permissions', json_encode($memberPermissions));
             }
 
-            // Image
-            // Image → Cloudinary
             if ($request->has('image') && !empty($request->input('image'))) {
                 $imageBase64 = $request->input('image');
                 if (str_starts_with($imageBase64, 'data:image/')) {
@@ -324,7 +351,6 @@ class AuthController extends Controller
                             $imageData = base64_decode($imageParts[1], true);
                             if ($imageData === false) throw new \Exception('Décodage base64 échoué');
 
-                            // Sauvegarde temporaire
                             $tmpFile = tempnam(sys_get_temp_dir(), 'profile_');
                             file_put_contents($tmpFile, $imageData);
 
@@ -345,9 +371,7 @@ class AuthController extends Controller
                             ]);
 
                             unlink($tmpFile);
-
                             $user->update(['avatar' => $result['secure_url']]);
-
                             Log::info('Image profil uploadée sur Cloudinary', ['user_id' => $user->id]);
                         }
                     } catch (\Exception $e) {
@@ -356,7 +380,6 @@ class AuthController extends Controller
                 }
             }
 
-            // Token création mot de passe
             $token = Str::random(64);
             DB::table('password_reset_tokens')->updateOrInsert(
                 ['email' => $email],
@@ -366,20 +389,26 @@ class AuthController extends Controller
             $webUrl = $request->input('url_frontend') . '/create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
             $appUrl = 'aeddi://create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
+            // ✅ Envoi via Brevo API (plus de Mail::send)
             try {
-                Mail::send('emails.create_password', [
+                $htmlContent = view('emails.create_password', [
                     'webUrl' => $webUrl,
                     'appUrl' => $appUrl,
                     'user'   => $user
-                ], function ($message) use ($user) {
-                    $message->to($user->email)->subject('Créez votre mot de passe - AEDDI');
-                });
-                Log::info('Email création mot de passe envoyé', ['user_id' => $user->id, 'email' => $email]);
+                ])->render();
+
+                $this->sendEmailViaBrevo(
+                    $user->email,
+                    $user->name,
+                    'Créez votre mot de passe - AEDDI',
+                    $htmlContent
+                );
+
+                Log::info('Email création mot de passe envoyé via Brevo', ['user_id' => $user->id, 'email' => $email]);
             } catch (\Exception $e) {
-                Log::error('Erreur envoi email: ' . $e->getMessage(), ['user_id' => $user->id]);
+                Log::error('Erreur envoi email Brevo: ' . $e->getMessage(), ['user_id' => $user->id]);
             }
 
-            // Cotisations
             try {
                 $cotisations = \App\Models\Cotisation::all();
                 foreach ($cotisations as $cotisation) {
@@ -513,24 +542,31 @@ class AuthController extends Controller
             $webUrl = $request->input('url_frontend') . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
             $appUrl = 'aeddi://reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
-            Mail::send('emails.password_reset', [
+            // ✅ Envoi via Brevo API (plus de Mail::send)
+            $htmlContent = view('emails.password_reset', [
                 'webUrl' => $webUrl,
                 'appUrl' => $appUrl,
                 'user'   => $user
-            ], function ($message) use ($user) {
-                $message->to($user->email)->subject('Réinitialisation de votre mot de passe - AEDDI');
-            });
+            ])->render();
 
-            Log::info('Email réinitialisation envoyé', ['user_id' => $user->id, 'email' => $email]);
+            $this->sendEmailViaBrevo(
+                $user->email,
+                $user->name,
+                'Réinitialisation de votre mot de passe - AEDDI',
+                $htmlContent
+            );
+
+            Log::info('Email réinitialisation envoyé via Brevo', ['user_id' => $user->id, 'email' => $email]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Un email de réinitialisation a été envoyé à ' . $email . '.'
             ], 200);
         } catch (\Exception $e) {
+            Log::error('Erreur envoi email reset: ' . $e->getMessage(), ['email' => $email]);
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage()
+                'message' => 'Erreur lors de l\'envoi de l\'email : ' . $e->getMessage()
             ], 500);
         }
     }
