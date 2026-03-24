@@ -288,9 +288,7 @@ class AuthController extends Controller
             ], 409);
         }
 
-        $authorized = AuthorizedEmail::where('meta_key', 'email')
-            ->where('meta_value', $email)
-            ->first();
+        $authorized = AuthorizedEmail::where('email', $email)->first();
 
         if (!$authorized) {
             return response()->json([
@@ -306,7 +304,7 @@ class AuthController extends Controller
                 'name'     => trim($request->input('prenom') . ' ' . $request->input('nom')),
                 'email'    => $email,
                 'password' => Hash::make(Str::random(32)),
-                'role'     => 'MEMBER',
+                'role'     => $authorized->role,
                 'sub_role' => json_encode([]),
             ]);
 
@@ -329,9 +327,9 @@ class AuthController extends Controller
                 }
             }
 
-            $memberPermissions = RolePermission::findPermissions('MEMBER', null);
-            if (!empty($memberPermissions)) {
-                $user->setMeta('permissions', json_encode($memberPermissions));
+            $rolePermissions = RolePermission::findPermissions($authorized->role, null);
+            if (!empty($rolePermissions)) {
+                $user->setMeta('permissions', json_encode($rolePermissions));
             }
 
             if ($request->has('image') && !empty($request->input('image'))) {
