@@ -400,9 +400,18 @@ class AuthController extends Controller
             try {
                 $cotisations = \App\Models\Cotisation::all();
                 foreach ($cotisations as $cotisation) {
+                    if ($user->role === 'NOVICE') {
+                        $montant = $cotisation->montant_novice;
+                    } else {
+                        $montant = $cotisation->montant_ancien;
+                    }
+
                     \App\Models\CotisationMembre::firstOrCreate(
                         ['user_id' => $user->id, 'cotisation_id' => $cotisation->id],
-                        ['statut' => 'non_paye', 'montant_restant' => $cotisation->montant]
+                        [
+                            'statut'          => 'non_paye',
+                            'montant_restant' => $montant,
+                        ]
                     );
                 }
             } catch (\Exception $e) {
