@@ -31,10 +31,14 @@ class CotisationController extends Controller
     // ─── Afficher toutes les cotisations ─────────────────────
     public function index(Request $request)
     {
+        $token = $request->bearerToken();
+        $user = $request->user('sanctum');
+
         return response()->json([
             'success' => true,
             'debug'   => 'index called',
-            'user'    => $request->user(),
+            'token_recu' => $token,
+            'user'    => $user,
         ]);
     }
 
