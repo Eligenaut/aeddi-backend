@@ -15,16 +15,17 @@ class CotisationController extends Controller
     private function format(Cotisation $cotisation): array
     {
         return [
-            'id'            => $cotisation->id,
-            'nom'           => $cotisation->nom,
-            'description'   => $cotisation->description,
-            'montant'       => $cotisation->montant,
-            'date_debut'    => $cotisation->date_debut->toDateString(),
-            'date_fin'      => $cotisation->date_fin->toDateString(),
-            'statut'        => $cotisation->statut,
-            'created_at'    => $cotisation->created_at,
-            'total_membres' => $cotisation->total_membres ?? 0,  // ← nouveau
-            'membres_payes' => $cotisation->membres_payes ?? 0,  // ← nouveau
+            'id'             => $cotisation->id,
+            'nom'            => $cotisation->nom,
+            'description'    => $cotisation->description,
+            'montant_ancien' => $cotisation->montant_ancien,
+            'montant_novice' => $cotisation->montant_novice,
+            'date_debut'     => $cotisation->date_debut->toDateString(),
+            'date_fin'       => $cotisation->date_fin->toDateString(),
+            'statut'         => $cotisation->statut,
+            'created_at'     => $cotisation->created_at,
+            'total_membres'  => $cotisation->total_membres ?? 0,
+            'membres_payes'  => $cotisation->membres_payes ?? 0,
         ];
     }
 
@@ -54,28 +55,35 @@ class CotisationController extends Controller
         Log::info('Cotisation store - données reçues', $request->all());
 
         $request->validate([
-            'nom'         => 'required|string|max:255',
-            'description' => 'required|string',
-            'montant'     => 'required|numeric|min:0',
-            'date_debut'  => 'required|date',
-            'date_fin'    => 'required|date|after:date_debut',
-            'statut'      => 'sometimes|in:en_cours,terminee,en_attente,annulee',
+            'nom'            => 'required|string|max:255',
+            'description'    => 'required|string',
+            'montant_ancien' => 'required|numeric|min:0',
+            'montant_novice' => 'required|numeric|min:0',
+            'date_debut'     => 'required|date',
+            'date_fin'       => 'required|date|after:date_debut',
+            'statut'         => 'sometimes|in:en_cours,terminee,en_attente,annulee',
         ]);
 
         try {
             $cotisation = Cotisation::create([
-                'nom'         => $request->nom,
-                'description' => $request->description,
-                'montant'     => $request->montant,
-                'date_debut'  => $request->date_debut,
-                'date_fin'    => $request->date_fin,
-                'statut'      => $request->statut ?? 'en_cours',
+                'nom'             => $request->nom,
+                'description'     => $request->description,
+                'montant_ancien'  => $request->montant_ancien,
+                'montant_novice'  => $request->montant_novice,
+                'date_debut'      => $request->date_debut,
+                'date_fin'        => $request->date_fin,
+                'statut'          => $request->statut ?? 'en_cours',
             ]);
 
-            // ✅ Assigner à tous les membres sauf admin
             $membres = User::where('role', '!=', 'ADMIN')->get();
 
             foreach ($membres as $membre) {
+                if ($membre->role === 'NOVICE') {
+                    $montant = $cotisation->montant_novice;
+                } else {
+                    $montant = $cotisation->montant_ancien;
+                }
+
                 CotisationMembre::firstOrCreate(
                     [
                         'user_id'       => $membre->id,
@@ -83,13 +91,13 @@ class CotisationController extends Controller
                     ],
                     [
                         'statut'          => 'non_paye',
-                        'montant_restant' => $cotisation->montant,
+                        'montant_restant' => $montant,
                     ]
                 );
             }
 
             Log::info('Cotisation créée et assignée', [
-                'id'              => $cotisation->id,
+                'id'               => $cotisation->id,
                 'membres_assignes' => $membres->count(),
             ]);
 
@@ -147,18 +155,20 @@ class CotisationController extends Controller
         }
 
         $request->validate([
-            'nom'         => 'sometimes|string|max:255',
-            'description' => 'sometimes|string',
-            'montant'     => 'sometimes|numeric|min:0',
-            'date_debut'  => 'sometimes|date',
-            'date_fin'    => 'sometimes|date|after:date_debut',
-            'statut' => 'sometimes|in:en_cours,terminee,en_attente,annulee',
+            'nom'            => 'sometimes|string|max:255',
+            'description'    => 'sometimes|string',
+            'montant_ancien' => 'sometimes|numeric|min:0',
+            'montant_novice' => 'sometimes|numeric|min:0',
+            'date_debut'     => 'sometimes|date',
+            'date_fin'       => 'sometimes|date|after:date_debut',
+            'statut'         => 'sometimes|in:en_cours,terminee,en_attente,annulee',
         ]);
 
         $cotisation->update($request->only([
             'nom',
             'description',
-            'montant',
+            'montant_ancien',
+            'montant_novice',
             'date_debut',
             'date_fin',
             'statut'
@@ -210,10 +220,12 @@ class CotisationController extends Controller
             ->where('user_id', $memberId)
             ->get()
             ->map(fn($cm) => [
-                'cotisation'      => [
+                'cotisation' => [
                     'id'      => $cm->cotisation->id,
                     'nom'     => $cm->cotisation->nom,
-                    'montant' => $cm->cotisation->montant,
+                    'montant' => $membre->role === 'NOVICE'
+                        ? $cm->cotisation->montant_novice
+                        : $cm->cotisation->montant_ancien,
                 ],
                 'statut'          => $cm->statut,
                 'montant_restant' => $cm->montant_restant,

@@ -12,7 +12,8 @@ class Cotisation extends Model
     protected $fillable = [
         'nom',
         'description',
-        'montant',
+        'montant_ancien',
+        'montant_novice',
         'date_debut',
         'date_fin',
         'statut',
@@ -20,10 +21,11 @@ class Cotisation extends Model
     ];
 
     protected $casts = [
-        'date_debut' => 'date',
-        'date_fin'   => 'date',
-        'montant'    => 'decimal:2',
-        'meta'       => AsArrayObject::class,
+        'date_debut'      => 'date',
+        'date_fin'        => 'date',
+        'montant_ancien'  => 'decimal:2',
+        'montant_novice'  => 'decimal:2',
+        'meta'            => AsArrayObject::class,
     ];
 
     // ─── Relations ────────────────────────────────────────────
@@ -36,8 +38,8 @@ class Cotisation extends Model
     public function membres(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'cotisation_membre')
-                    ->withPivot('statut', 'montant_restant')
-                    ->withTimestamps();
+            ->withPivot('statut', 'montant_restant')
+            ->withTimestamps();
     }
 
     // ─── Helpers meta ─────────────────────────────────────────
