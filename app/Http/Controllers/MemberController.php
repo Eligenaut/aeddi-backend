@@ -4,14 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\RolePermission;
+use App\Models\Cotisation;
+use App\Models\CotisationMembre;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class MemberController extends Controller
 {
     // ─── Helper upload image Cloudinary ──────────────────────
-
     private function uploadImageToCloudinary(string $imageData, string $publicId): string
     {
         \Cloudinary\Configuration\Configuration::instance([
@@ -23,7 +24,6 @@ class MemberController extends Controller
             'url' => ['secure' => true],
         ]);
 
-        // Sauvegarde temporaire
         $tmpFile = tempnam(sys_get_temp_dir(), 'profile_');
         file_put_contents($tmpFile, $imageData);
 
@@ -39,8 +39,7 @@ class MemberController extends Controller
         return $result['secure_url'];
     }
 
-    // ─── Helper avatar URL ────────────────────────────────────
-
+    // ─── Helper avatar URL ───────────────────────────────────
     private function getAvatarUrl(User $member): string
     {
         if ($member->avatar) {
@@ -52,6 +51,7 @@ class MemberController extends Controller
         return '';
     }
 
+    // ─── Formater les données d'un membre pour l'API ─────────
     private function formatMember(User $member): array
     {
         $cotisations = $member->cotisationMembres ?? collect();
@@ -62,21 +62,21 @@ class MemberController extends Controller
 
         return [
             'id'               => $member->id,
-            'name'             => $member->name                        ?? '',
-            'nom'              => $member->getMeta('nom')              ?? '',
-            'prenom'           => $member->getMeta('prenom')           ?? '',
-            'email'            => $member->email                       ?? '',
+            'name'             => $member->name ?? '',
+            'nom'              => $member->getMeta('nom') ?? '',
+            'prenom'           => $member->getMeta('prenom') ?? '',
+            'email'            => $member->email ?? '',
             'avatar'           => $this->getAvatarUrl($member),
             'role'             => strtoupper($member->role ?? 'MEMBER'),
             'sub_role'         => json_decode($member->sub_role ?? '[]') ?? [],
-            'etablissement'    => $member->getMeta('etablissement')    ?? '',
-            'parcours'         => $member->getMeta('parcours')         ?? '',
-            'niveau'           => $member->getMeta('niveau')           ?? '',
-            'promotion'        => $member->getMeta('promotion')        ?? '',
-            'logement'         => $member->getMeta('logement')         ?? '',
-            'bloc_campus'      => $member->getMeta('bloc_campus')      ?? '',
-            'quartier'         => $member->getMeta('quartier')         ?? '',
-            'telephone'        => $member->getMeta('telephone')        ?? '',
+            'etablissement'    => $member->getMeta('etablissement') ?? '',
+            'parcours'         => $member->getMeta('parcours') ?? '',
+            'niveau'           => $member->getMeta('niveau') ?? '',
+            'promotion'        => $member->getMeta('promotion') ?? '',
+            'logement'         => $member->getMeta('logement') ?? '',
+            'bloc_campus'      => $member->getMeta('bloc_campus') ?? '',
+            'quartier'         => $member->getMeta('quartier') ?? '',
+            'telephone'        => $member->getMeta('telephone') ?? '',
             'statut'           => $member->email_verified_at ? 'actif' : 'en_attente',
             'cotisation_stats' => $cotisationStats,
             'created_at'       => $member->created_at->toDateTimeString(),
@@ -84,6 +84,7 @@ class MemberController extends Controller
         ];
     }
 
+    // ─── Liste tous les membres ─────────────────────────────
     public function index(): JsonResponse
     {
         $members = User::where('role', '!=', 'ADMIN')
@@ -99,6 +100,7 @@ class MemberController extends Controller
         ]);
     }
 
+    // ─── Afficher un membre ──────────────────────────────────
     public function show($id): JsonResponse
     {
         $member = User::find($id);
@@ -118,6 +120,7 @@ class MemberController extends Controller
         ]);
     }
 
+    // ─── Mettre à jour un membre ────────────────────────────
     public function update(Request $request, $id): JsonResponse
     {
         $member = User::find($id);
@@ -149,8 +152,6 @@ class MemberController extends Controller
             'blocCampus'    => 'nullable|string|max:255',
             'quartier'      => 'nullable|string|max:255',
             'image'         => 'nullable|string',
-            'imageName'     => 'nullable|string',
-            'imageType'     => 'nullable|string',
             'role'          => 'nullable|string|in:MEMBER,BUREAU',
             'subRoles'      => 'nullable|array',
             'subRoles.*'    => 'string',
@@ -162,6 +163,7 @@ class MemberController extends Controller
                 'email' => $validated['email'],
             ];
 
+            // Gestion des rôles et permissions
             if (isset($validated['role'])) {
                 $newRole     = $validated['role'];
                 $newSubRoles = $newRole === 'BUREAU' ? ($validated['subRoles'] ?? []) : [];
@@ -180,6 +182,7 @@ class MemberController extends Controller
 
             $member->update($updateData);
 
+            // Mise à jour des métas
             $metas = [
                 'nom'           => $validated['nom'],
                 'prenom'        => $validated['prenom'],
@@ -190,25 +193,21 @@ class MemberController extends Controller
                 'promotion'     => $validated['promotion']     ?? '',
                 'logement'      => $validated['logement']      ?? '',
                 'bloc_campus'   => $validated['logement'] === 'campus' ? ($validated['blocCampus'] ?? '') : '',
-                'quartier'      => $validated['logement'] === 'ville'  ? ($validated['quartier']   ?? '') : '',
+                'quartier'      => $validated['logement'] === 'ville'  ? ($validated['quartier'] ?? '') : '',
             ];
 
             foreach ($metas as $key => $value) {
                 $member->setMeta($key, $value);
             }
 
-            // ─── Upload photo de profil vers Cloudinary ───────
-            if (!empty($validated['image'])) {
-                $imageBase64 = $validated['image'];
-                if (str_starts_with($imageBase64, 'data:image/')) {
-                    $imageParts = explode(',', $imageBase64);
-                    if (count($imageParts) === 2) {
-                        $imageData = base64_decode($imageParts[1], true);
-                        $publicId  = 'profile_' . $member->id;
-
-                        $avatarUrl = $this->uploadImageToCloudinary($imageData, $publicId);
-                        $member->update(['avatar' => $avatarUrl]);
-                    }
+            // Upload avatar si fourni
+            if (!empty($validated['image']) && str_starts_with($validated['image'], 'data:image/')) {
+                $imageParts = explode(',', $validated['image']);
+                if (count($imageParts) === 2) {
+                    $imageData = base64_decode($imageParts[1], true);
+                    $publicId  = 'profile_' . $member->id;
+                    $avatarUrl = $this->uploadImageToCloudinary($imageData, $publicId);
+                    $member->update(['avatar' => $avatarUrl]);
                 }
             }
 
@@ -228,6 +227,7 @@ class MemberController extends Controller
         }
     }
 
+    // ─── Supprimer un membre ────────────────────────────────
     public function destroy($id): JsonResponse
     {
         $member = User::find($id);

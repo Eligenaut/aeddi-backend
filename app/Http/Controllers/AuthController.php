@@ -9,15 +9,42 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Laravel\Socialite\Facades\Socialite;
+use Brevo\Brevo;
+use Brevo\TransactionalEmails\Requests\SendTransacEmailRequest;
+use Brevo\TransactionalEmails\Types\SendTransacEmailRequestSender;
+use Brevo\TransactionalEmails\Types\SendTransacEmailRequestToItem;
 
 class AuthController extends Controller
 {
+    // ─── Helper : envoie un email via Brevo API ────────────────────────────────
+    private function sendEmailViaBrevo(string $toEmail, string $toName, string $subject, string $htmlContent): void
+    {
+        $brevo = new Brevo(env('BREVO_API_KEY'));
+
+        $brevo->transactionalEmails->sendTransacEmail(
+            new SendTransacEmailRequest([
+                'subject'     => $subject,
+                'htmlContent' => $htmlContent,
+                'sender'      => new SendTransacEmailRequestSender([
+                    'name'  => 'AEDDI',
+                    'email' => 'brunobrayane@gmail.com'
+                ]),
+                'to' => [
+                    new SendTransacEmailRequestToItem([
+                        'email' => $toEmail,
+                        'name'  => $toName
+                    ])
+                ]
+            ])
+        );
+    }
+
     public function login(Request $request)
     {
         $request->validate([
@@ -70,6 +97,118 @@ class AuthController extends Controller
         ]);
     }
 
+    public function googleMobile(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'id_token' => 'required|string',
+                'email'    => 'required|email',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json(['success' => false, 'message' => 'Données invalides'], 422);
+            }
+
+            $client = new \Google\Client(['client_id' => env('GOOGLE_CLIENT_ID')]);
+            $payload = $client->verifyIdToken($request->id_token);
+
+            if (!$payload) {
+                return response()->json(['success' => false, 'message' => 'Token Google invalide'], 401);
+            }
+
+            $user = User::where('email', $request->email)->first();
+
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'Email non autorisé'], 403);
+            }
+
+            if (empty($user->avatar) && $request->avatar) {
+                $user->update(['avatar' => $request->avatar]);
+            }
+
+            $user->load('meta');
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            $permissions = [];
+            if (!$user->isAdmin()) {
+                $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
+            }
+
+            return response()->json([
+                'success' => true,
+                'token'   => $token,
+                'user'    => [
+                    'id'            => $user->id,
+                    'name'          => $user->name,
+                    'nom'           => $user->getMeta('nom') ?? '',
+                    'prenom'        => $user->getMeta('prenom') ?? '',
+                    'email'         => $user->email,
+                    'avatar'        => $user->avatar ?? '',
+                    'role'          => strtoupper($user->role ?? 'MEMBER'),
+                    'sub_role'      => json_decode($user->sub_role ?? '[]') ?? [],
+                    'permissions'   => $permissions,
+                    'etablissement' => $user->getMeta('etablissement') ?? '',
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erreur Google Mobile:', ['message' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur serveur'], 500);
+        }
+    }
+
+    public function redirectToGoogle()
+    {
+        return Socialite::driver('google')->redirect();
+    }
+
+    public function handleGoogleCallback(Request $request)
+    {
+        try {
+            $googleUser = Socialite::driver('google')->user();
+
+            Log::info('Google user OK', ['email' => $googleUser->getEmail()]);
+
+            $user = User::where('email', $googleUser->getEmail())->first();
+
+            if (!$user) {
+                return redirect(env('FRONTEND_URL') . '/login?error=email_non_autorise');
+            }
+
+            if (empty($user->avatar) && $googleUser->getAvatar()) {
+                $user->update(['avatar' => $googleUser->getAvatar()]);
+            }
+
+            $user->load('meta');
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            $permissions = [];
+            if (!$user->isAdmin()) {
+                $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
+            }
+
+            $userData = urlencode(json_encode([
+                'id'            => $user->id,
+                'name'          => $user->name,
+                'nom'           => $user->getMeta('nom') ?? '',
+                'prenom'        => $user->getMeta('prenom') ?? '',
+                'email'         => $user->email,
+                'avatar'        => $user->avatar ?? '',
+                'role'          => strtoupper($user->role ?? 'MEMBER'),
+                'sub_role'      => json_decode($user->sub_role ?? '[]') ?? [],
+                'permissions'   => $permissions,
+                'etablissement' => $user->getMeta('etablissement') ?? '',
+            ]));
+
+            return redirect('https://aeddi-antsiranana.vercel.app/auth/google/success?token=' . $token . '&user=' . $userData);
+        } catch (\Exception $e) {
+            Log::error('Erreur Google OAuth', [
+                'message' => $e->getMessage(),
+                'line'    => $e->getLine(),
+            ]);
+            return redirect(env('FRONTEND_URL') . '/login?error=' . urlencode($e->getMessage()));
+        }
+    }
+
     public function checkEmailAllowed(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -94,9 +233,7 @@ class AuthController extends Controller
             ], 409);
         }
 
-        $authorized = AuthorizedEmail::where('meta_key', 'email')
-            ->where('meta_value', $email)
-            ->first();
+        $authorized = AuthorizedEmail::where('email', $email)->first();
 
         if (!$authorized) {
             return response()->json([
@@ -149,9 +286,7 @@ class AuthController extends Controller
             ], 409);
         }
 
-        $authorized = AuthorizedEmail::where('meta_key', 'email')
-            ->where('meta_value', $email)
-            ->first();
+        $authorized = AuthorizedEmail::where('email', $email)->first();
 
         if (!$authorized) {
             return response()->json([
@@ -167,11 +302,10 @@ class AuthController extends Controller
                 'name'     => trim($request->input('prenom') . ' ' . $request->input('nom')),
                 'email'    => $email,
                 'password' => Hash::make(Str::random(32)),
-                'role'     => 'MEMBER',
+                'role'     => $authorized->role,
                 'sub_role' => json_encode([]),
             ]);
 
-            // Metas
             $metas = [
                 'nom'           => $request->input('nom'),
                 'prenom'        => $request->input('prenom'),
@@ -191,14 +325,11 @@ class AuthController extends Controller
                 }
             }
 
-            // ✅ Assigner les permissions MEMBER automatiquement
-            $memberPermissions = RolePermission::findPermissions('MEMBER', null);
-            if (!empty($memberPermissions)) {
-                $user->setMeta('permissions', json_encode($memberPermissions));
+            $rolePermissions = RolePermission::findPermissions($authorized->role, null);
+            if (!empty($rolePermissions)) {
+                $user->setMeta('permissions', json_encode($rolePermissions));
             }
 
-            // Image
-            // Image → Cloudinary
             if ($request->has('image') && !empty($request->input('image'))) {
                 $imageBase64 = $request->input('image');
                 if (str_starts_with($imageBase64, 'data:image/')) {
@@ -208,7 +339,6 @@ class AuthController extends Controller
                             $imageData = base64_decode($imageParts[1], true);
                             if ($imageData === false) throw new \Exception('Décodage base64 échoué');
 
-                            // Sauvegarde temporaire
                             $tmpFile = tempnam(sys_get_temp_dir(), 'profile_');
                             file_put_contents($tmpFile, $imageData);
 
@@ -229,9 +359,7 @@ class AuthController extends Controller
                             ]);
 
                             unlink($tmpFile);
-
                             $user->update(['avatar' => $result['secure_url']]);
-
                             Log::info('Image profil uploadée sur Cloudinary', ['user_id' => $user->id]);
                         }
                     } catch (\Exception $e) {
@@ -240,7 +368,6 @@ class AuthController extends Controller
                 }
             }
 
-            // Token création mot de passe
             $token = Str::random(64);
             DB::table('password_reset_tokens')->updateOrInsert(
                 ['email' => $email],
@@ -250,26 +377,41 @@ class AuthController extends Controller
             $webUrl = $request->input('url_frontend') . '/create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
             $appUrl = 'aeddi://create-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
+            // ✅ Envoi via Brevo API (plus de Mail::send)
             try {
-                Mail::send('emails.create_password', [
+                $htmlContent = view('emails.create_password', [
                     'webUrl' => $webUrl,
                     'appUrl' => $appUrl,
                     'user'   => $user
-                ], function ($message) use ($user) {
-                    $message->to($user->email)->subject('Créez votre mot de passe - AEDDI');
-                });
-                Log::info('Email création mot de passe envoyé', ['user_id' => $user->id, 'email' => $email]);
+                ])->render();
+
+                $this->sendEmailViaBrevo(
+                    $user->email,
+                    $user->name,
+                    'Créez votre mot de passe - AEDDI',
+                    $htmlContent
+                );
+
+                Log::info('Email création mot de passe envoyé via Brevo', ['user_id' => $user->id, 'email' => $email]);
             } catch (\Exception $e) {
-                Log::error('Erreur envoi email: ' . $e->getMessage(), ['user_id' => $user->id]);
+                Log::error('Erreur envoi email Brevo: ' . $e->getMessage(), ['user_id' => $user->id]);
             }
 
-            // Cotisations
             try {
                 $cotisations = \App\Models\Cotisation::all();
                 foreach ($cotisations as $cotisation) {
+                    if ($user->role === 'NOVICE') {
+                        $montant = $cotisation->montant_novice;
+                    } else {
+                        $montant = $cotisation->montant_ancien;
+                    }
+
                     \App\Models\CotisationMembre::firstOrCreate(
                         ['user_id' => $user->id, 'cotisation_id' => $cotisation->id],
-                        ['statut' => 'non_paye', 'montant_restant' => $cotisation->montant]
+                        [
+                            'statut'          => 'non_paye',
+                            'montant_restant' => $montant,
+                        ]
                     );
                 }
             } catch (\Exception $e) {
@@ -397,15 +539,21 @@ class AuthController extends Controller
             $webUrl = $request->input('url_frontend') . '/reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
             $appUrl = 'aeddi://reset-password?token=' . urlencode($token) . '&email=' . urlencode($email);
 
-            Mail::send('emails.password_reset', [
+            // ✅ Envoi via Brevo API (plus de Mail::send)
+            $htmlContent = view('emails.password_reset', [
                 'webUrl' => $webUrl,
                 'appUrl' => $appUrl,
                 'user'   => $user
-            ], function ($message) use ($user) {
-                $message->to($user->email)->subject('Réinitialisation de votre mot de passe - AEDDI');
-            });
+            ])->render();
 
-            Log::info('Email réinitialisation envoyé', ['user_id' => $user->id, 'email' => $email]);
+            $this->sendEmailViaBrevo(
+                $user->email,
+                $user->name,
+                'Réinitialisation de votre mot de passe - AEDDI',
+                $htmlContent
+            );
+
+            Log::info('Email réinitialisation envoyé via Brevo', ['user_id' => $user->id, 'email' => $email]);
 
             return response()->json([
                 'success' => true,
@@ -415,7 +563,7 @@ class AuthController extends Controller
             Log::error('Erreur envoi email reset: ' . $e->getMessage(), ['email' => $email]);
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de l\'envoi de l\'email'
+                'message' => 'Erreur lors de l\'envoi de l\'email : ' . $e->getMessage()
             ], 500);
         }
     }
@@ -485,22 +633,19 @@ class AuthController extends Controller
     public function addAuthorizedEmail(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email|max:255'
+            'email' => 'required|email|max:255',
+            'role'  => 'required|in:NOVICE,MEMBER'
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Email invalide',
+                'message' => 'Données invalides',
                 'errors'  => $validator->errors()
             ], 422);
         }
 
-        $email = $request->input('email');
-
-        $existing = AuthorizedEmail::where('meta_key', 'email')
-            ->where('meta_value', $email)
-            ->first();
+        $existing = AuthorizedEmail::where('email', $request->input('email'))->first();
 
         if ($existing) {
             return response()->json([
@@ -511,9 +656,9 @@ class AuthController extends Controller
 
         try {
             AuthorizedEmail::create([
-                'user_id'    => Auth::id(),
-                'meta_key'   => 'email',
-                'meta_value' => $email,
+                'user_id' => Auth::id(),
+                'email'   => $request->input('email'),
+                'role'    => $request->input('role', 'NOVICE'),
             ]);
 
             return response()->json([
@@ -532,12 +677,12 @@ class AuthController extends Controller
     public function getAuthorizedEmails(): JsonResponse
     {
         try {
-            $emails = AuthorizedEmail::where('meta_key', 'email')
-                ->orderBy('created_at', 'desc')
+            $emails = AuthorizedEmail::orderBy('created_at', 'desc')
                 ->get()
                 ->map(fn($item) => [
                     'id'    => $item->id,
-                    'email' => $item->meta_value,
+                    'email' => $item->email,
+                    'role'  => $item->role,
                 ]);
 
             return response()->json([

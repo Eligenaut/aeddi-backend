@@ -94,3 +94,5 @@ Route::post('/notifications/send-user/{id}', [NotificationController::class, 'se
 Route::get('/api/test', function () {
     return ['status' => 'OK'];
 });
+
+Route::post('auth/google/mobile', [AuthController::class, 'googleMobile']);

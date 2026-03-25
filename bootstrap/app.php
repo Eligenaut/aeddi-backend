@@ -16,13 +16,15 @@ return Application::configure(basePath: dirname(__DIR__))
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \Illuminate\Http\Middleware\HandleCors::class,
         ]);
-        
+
         $middleware->web(append: [
             \Illuminate\Http\Middleware\HandleCors::class,
         ]);
-        
+
         $middleware->validateCsrfTokens(except: [
             'api/*',
+            'auth/google',
+            'auth/google/callback',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

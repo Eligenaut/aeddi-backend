@@ -12,7 +12,10 @@ return new class extends Migration
             $table->id();
             $table->string('nom');
             $table->text('description');
-            $table->decimal('montant', 10, 2);
+            
+            $table->decimal('montant_ancien', 10, 2)->default(0);
+            $table->decimal('montant_novice', 10, 2)->default(0);
+            
             $table->date('date_debut');
             $table->date('date_fin');
             $table->string('lieu')->nullable();

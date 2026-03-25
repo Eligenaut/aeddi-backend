@@ -3,34 +3,32 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cotisation;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use App\Models\CotisationMembre;
 use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class CotisationController extends Controller
 {
     // ─── Helper format réponse ────────────────────────────────
-
     private function format(Cotisation $cotisation): array
     {
         return [
             'id'            => $cotisation->id,
             'nom'           => $cotisation->nom,
             'description'   => $cotisation->description,
-            'montant'       => $cotisation->montant,
+            'montant_novice' => $cotisation->montant_novice,
+            'montant_ancien' => $cotisation->montant_ancien,
             'date_debut'    => $cotisation->date_debut->toDateString(),
             'date_fin'      => $cotisation->date_fin->toDateString(),
             'statut'        => $cotisation->statut,
             'created_at'    => $cotisation->created_at,
-            'total_membres' => $cotisation->total_membres ?? 0,  // ← nouveau
-            'membres_payes' => $cotisation->membres_payes ?? 0,  // ← nouveau
+            'total_membres' => $cotisation->total_membres ?? 0,
+            'membres_payes' => $cotisation->membres_payes ?? 0,
         ];
     }
 
-    /**
-     * Afficher toutes les cotisations
-     */
+    // ─── Afficher toutes les cotisations ─────────────────────
     public function index()
     {
         $cotisations = Cotisation::withCount([
@@ -46,36 +44,40 @@ class CotisationController extends Controller
         ]);
     }
 
-    /**
-     * Créer une nouvelle cotisation
-     */
+    // ─── Créer une cotisation ───────────────────────────────
     public function store(Request $request)
     {
         Log::info('Cotisation store - données reçues', $request->all());
 
         $request->validate([
-            'nom'         => 'required|string|max:255',
-            'description' => 'required|string',
-            'montant'     => 'required|numeric|min:0',
-            'date_debut'  => 'required|date',
-            'date_fin'    => 'required|date|after:date_debut',
-            'statut'      => 'sometimes|in:en_cours,terminee,en_attente,annulee',
+            'nom'            => 'required|string|max:255',
+            'description'    => 'required|string',
+            'montant_novice' => 'required|numeric|min:0',
+            'montant_ancien' => 'required|numeric|min:0',
+            'date_debut'     => 'required|date',
+            'date_fin'       => 'required|date|after:date_debut',
+            'statut'         => 'sometimes|in:en_cours,terminee,en_attente,annulee',
         ]);
 
         try {
             $cotisation = Cotisation::create([
-                'nom'         => $request->nom,
-                'description' => $request->description,
-                'montant'     => $request->montant,
-                'date_debut'  => $request->date_debut,
-                'date_fin'    => $request->date_fin,
-                'statut'      => $request->statut ?? 'en_cours',
+                'nom'             => $request->nom,
+                'description'     => $request->description,
+                'montant_novice'  => $request->montant_novice,
+                'montant_ancien'  => $request->montant_ancien,
+                'date_debut'      => $request->date_debut,
+                'date_fin'        => $request->date_fin,
+                'statut'          => $request->statut ?? 'en_cours',
             ]);
 
-            // ✅ Assigner à tous les membres sauf admin
+            // ✅ Assigner la cotisation à tous les membres sauf ADMIN
             $membres = User::where('role', '!=', 'ADMIN')->get();
 
             foreach ($membres as $membre) {
+                $montant = $membre->role === 'NOVICE'
+                    ? $cotisation->montant_novice
+                    : $cotisation->montant_ancien;
+
                 CotisationMembre::firstOrCreate(
                     [
                         'user_id'       => $membre->id,
@@ -83,13 +85,13 @@ class CotisationController extends Controller
                     ],
                     [
                         'statut'          => 'non_paye',
-                        'montant_restant' => $cotisation->montant,
+                        'montant_restant' => $montant,
                     ]
                 );
             }
 
             Log::info('Cotisation créée et assignée', [
-                'id'              => $cotisation->id,
+                'id'               => $cotisation->id,
                 'membres_assignes' => $membres->count(),
             ]);
 
@@ -112,13 +114,10 @@ class CotisationController extends Controller
         }
     }
 
-    /**
-     * Afficher une cotisation spécifique
-     */
+    // ─── Afficher une cotisation spécifique ─────────────────
     public function show($id)
     {
         $cotisation = Cotisation::find($id);
-
         if (!$cotisation) {
             return response()->json([
                 'success' => false,
@@ -132,13 +131,10 @@ class CotisationController extends Controller
         ]);
     }
 
-    /**
-     * Mettre à jour une cotisation
-     */
+    // ─── Mettre à jour une cotisation ──────────────────────
     public function update(Request $request, $id)
     {
         $cotisation = Cotisation::find($id);
-
         if (!$cotisation) {
             return response()->json([
                 'success' => false,
@@ -147,22 +143,33 @@ class CotisationController extends Controller
         }
 
         $request->validate([
-            'nom'         => 'sometimes|string|max:255',
-            'description' => 'sometimes|string',
-            'montant'     => 'sometimes|numeric|min:0',
-            'date_debut'  => 'sometimes|date',
-            'date_fin'    => 'sometimes|date|after:date_debut',
-            'statut' => 'sometimes|in:en_cours,terminee,en_attente,annulee',
+            'nom'            => 'sometimes|string|max:255',
+            'description'    => 'sometimes|string',
+            'montant_novice' => 'sometimes|numeric|min:0',
+            'montant_ancien' => 'sometimes|numeric|min:0',
+            'date_debut'     => 'sometimes|date',
+            'date_fin'       => 'sometimes|date|after:date_debut',
+            'statut'         => 'sometimes|in:en_cours,terminee,en_attente,annulee',
         ]);
 
         $cotisation->update($request->only([
             'nom',
             'description',
-            'montant',
+            'montant_novice',
+            'montant_ancien',
             'date_debut',
             'date_fin',
             'statut'
         ]));
+
+        // 🔄 Mettre à jour les montants restants pour chaque membre assigné
+        foreach ($cotisation->cotisationMembres as $cm) {
+            $montant = $cm->user->role === 'NOVICE'
+                ? $cotisation->montant_novice
+                : $cotisation->montant_ancien;
+
+            $cm->update(['montant_restant' => $montant]);
+        }
 
         return response()->json([
             'success' => true,
@@ -171,13 +178,10 @@ class CotisationController extends Controller
         ]);
     }
 
-    /**
-     * Supprimer une cotisation
-     */
+    // ─── Supprimer une cotisation ───────────────────────────
     public function destroy($id)
     {
         $cotisation = Cotisation::find($id);
-
         if (!$cotisation) {
             return response()->json([
                 'success' => false,
@@ -192,13 +196,11 @@ class CotisationController extends Controller
             'message' => 'Cotisation supprimée avec succès',
         ]);
     }
-    /**
-     * Récupérer les cotisations d'un membre
-     */
+
+    // ─── Récupérer cotisations d’un membre ─────────────────
     public function getMemberCotisations($memberId)
     {
         $membre = User::find($memberId);
-
         if (!$membre) {
             return response()->json([
                 'success' => false,
@@ -211,9 +213,11 @@ class CotisationController extends Controller
             ->get()
             ->map(fn($cm) => [
                 'cotisation'      => [
-                    'id'      => $cm->cotisation->id,
-                    'nom'     => $cm->cotisation->nom,
-                    'montant' => $cm->cotisation->montant,
+                    'id'           => $cm->cotisation->id,
+                    'nom'          => $cm->cotisation->nom,
+                    'montant'      => $cm->user->role === 'NOVICE'
+                        ? $cm->cotisation->montant_novice
+                        : $cm->cotisation->montant_ancien,
                 ],
                 'statut'          => $cm->statut,
                 'montant_restant' => $cm->montant_restant,
@@ -225,9 +229,7 @@ class CotisationController extends Controller
         ]);
     }
 
-    /**
-     * Mettre à jour le statut d'une cotisation pour un membre
-     */
+    // ─── Mettre à jour le statut d'une cotisation pour un membre ──────
     public function updateMemberStatus(Request $request, $cotisationId, $memberId)
     {
         $request->validate([
@@ -257,9 +259,7 @@ class CotisationController extends Controller
         ]);
     }
 
-    /**
-     * Supprimer une cotisation pour un membre
-     */
+    // ─── Supprimer une cotisation pour un membre ─────────────
     public function deleteMemberCotisation($cotisationId, $memberId)
     {
         $cotisationMembre = CotisationMembre::where('cotisation_id', $cotisationId)
