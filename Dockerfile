@@ -18,4 +18,4 @@ RUN composer install --no-dev --optimize-autoloader --ignore-platform-reqs
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "php artisan config:clear && php artisan config:cache && php artisan storage:link && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}"]
+CMD ["sh", "-c", "php artisan config:clear && php artisan route:clear && php artisan cache:clear && php artisan config:cache && php artisan route:cache && php artisan storage:link && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}"]
