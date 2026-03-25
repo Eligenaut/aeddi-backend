@@ -31,59 +31,11 @@ class CotisationController extends Controller
     // ─── Afficher toutes les cotisations ─────────────────────
     public function index(Request $request)
     {
-        try {
-            $user = $request->user();
-
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Non authentifié',
-                ], 401);
-            }
-
-            if ($user->role === 'ADMIN') {
-                $cotisations = Cotisation::withCount([
-                    'cotisationMembres as total_membres',
-                    'cotisationMembres as membres_payes' => function ($query) {
-                        $query->where('statut', 'paye');
-                    },
-                ])->orderBy('created_at', 'desc')->get();
-
-                return response()->json([
-                    'success' => true,
-                    'data'    => $cotisations->map(fn($c) => $this->format($c)),
-                ]);
-            }
-
-            $membre = User::find($user->id);
-
-            $cotisations = CotisationMembre::with('cotisation')
-                ->where('user_id', $membre->id)
-                ->get()
-                ->map(fn($cm) => [
-                    'cotisation' => [
-                        'id'      => $cm->cotisation->id,
-                        'nom'     => $cm->cotisation->nom,
-                        'montant' => $membre->role === 'NOVICE'
-                            ? $cm->cotisation->montant_novice
-                            : $cm->cotisation->montant_ancien,
-                    ],
-                    'statut'          => $cm->statut,
-                    'montant_restant' => $cm->montant_restant,
-                ]);
-
-            return response()->json([
-                'success' => true,
-                'data'    => $cotisations,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Erreur index cotisations', ['error' => $e->getMessage()]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur serveur',
-                'error'   => $e->getMessage(),
-            ], 500);
-        }
+        return response()->json([
+            'success' => true,
+            'debug'   => 'index called',
+            'user'    => $request->user(),
+        ]);
     }
 
     // ─── Créer une cotisation ───────────────────────────────
