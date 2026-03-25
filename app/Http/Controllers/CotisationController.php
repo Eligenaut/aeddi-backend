@@ -32,7 +32,7 @@ class CotisationController extends Controller
     public function index(Request $request)
     {
         try {
-            $user = $request->user('sanctum'); // ← changer ici
+            $user = $request->user('sanctum');
 
             if (!$user) {
                 return response()->json([
@@ -41,20 +41,44 @@ class CotisationController extends Controller
                 ], 401);
             }
 
-            if ($user->role === 'ADMIN') {
+            if (strtoupper($user->role) === 'ADMIN') {
                 $cotisations = Cotisation::withCount([
                     'cotisationMembres as total_membres',
                     'cotisationMembres as membres_payes' => function ($query) {
                         $query->where('statut', 'paye');
                     },
+                    'cotisationMembres as membres_non_payes' => function ($query) {
+                        $query->whereIn('statut', ['non_paye', 'reste']);
+                    },
                 ])->orderBy('created_at', 'desc')->get();
 
                 return response()->json([
                     'success' => true,
-                    'data'    => $cotisations->map(fn($c) => $this->format($c)),
+                    'data'    => $cotisations->map(fn($c) => [
+                        'id'                => $c->id,
+                        'nom'               => $c->nom,
+                        'description'       => $c->description,
+                        'montant_novice'    => $c->montant_novice,
+                        'montant_ancien'    => $c->montant_ancien,
+                        'date_debut'        => $c->date_debut->toDateString(),
+                        'date_fin'          => $c->date_fin->toDateString(),
+                        'statut'            => $c->statut,
+                        'created_at'        => $c->created_at,
+                        'total_membres'     => $c->total_membres ?? 0,
+                        'membres_payes'     => $c->membres_payes ?? 0,
+                        'membres_non_payes' => $c->membres_non_payes ?? 0,
+                        'montant_total'     => CotisationMembre::where('cotisation_id', $c->id)
+                            ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
+                            ->selectRaw('SUM(CASE WHEN users.role = "NOVICE" THEN ? ELSE ? END) as total', [
+                                $c->montant_novice,
+                                $c->montant_ancien,
+                            ])
+                            ->value('total') ?? 0,
+                    ]),
                 ]);
             }
 
+            // MEMBRE → ses propres cotisations
             $membre = User::find($user->id);
 
             $cotisations = CotisationMembre::with('cotisation')
@@ -77,7 +101,11 @@ class CotisationController extends Controller
                 'data'    => $cotisations,
             ]);
         } catch (\Exception $e) {
-            Log::error('Erreur index cotisations', ['error' => $e->getMessage()]);
+            Log::error('Erreur index cotisations', [
+                'error' => $e->getMessage(),
+                'line'  => $e->getLine(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur serveur',
