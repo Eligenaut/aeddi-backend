@@ -40,6 +40,7 @@ class CotisationController extends Controller
                     'message' => 'Non authentifié',
                 ], 401);
             }
+
             if ($user->role === 'ADMIN') {
                 $cotisations = Cotisation::withCount([
                     'cotisationMembres as total_membres',
@@ -55,13 +56,6 @@ class CotisationController extends Controller
             }
 
             $membre = User::find($user->id);
-
-            if (!$membre) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Membre non trouvé',
-                ], 404);
-            }
 
             $cotisations = CotisationMembre::with('cotisation')
                 ->where('user_id', $membre->id)
@@ -83,11 +77,7 @@ class CotisationController extends Controller
                 'data'    => $cotisations,
             ]);
         } catch (\Exception $e) {
-            Log::error('Erreur index cotisations', [
-                'error' => $e->getMessage(),
-                'line'  => $e->getLine(),
-            ]);
-
+            Log::error('Erreur index cotisations', ['error' => $e->getMessage()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur serveur',
