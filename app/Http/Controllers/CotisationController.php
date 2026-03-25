@@ -29,18 +29,42 @@ class CotisationController extends Controller
     }
 
     // ─── Afficher toutes les cotisations ─────────────────────
-    public function index()
+    public function index(Request $request)
     {
-        $cotisations = Cotisation::withCount([
-            'cotisationMembres as total_membres',
-            'cotisationMembres as membres_payes' => function ($query) {
-                $query->where('statut', 'paye');
-            },
-        ])->orderBy('created_at', 'desc')->get();
+        $user = $request->user();
+
+        if ($user->role === 'ADMIN') {
+            $cotisations = Cotisation::withCount([
+                'cotisationMembres as total_membres',
+                'cotisationMembres as membres_payes' => function ($query) {
+                    $query->where('statut', 'paye');
+                },
+            ])->orderBy('created_at', 'desc')->get();
+
+            return response()->json([
+                'success' => true,
+                'data'    => $cotisations->map(fn($c) => $this->format($c)),
+            ]);
+        }
+
+        $cotisations = CotisationMembre::with('cotisation')
+            ->where('user_id', $user->id)
+            ->get()
+            ->map(fn($cm) => [
+                'cotisation'      => [
+                    'id'    => $cm->cotisation->id,
+                    'nom'   => $cm->cotisation->nom,
+                    'montant' => $user->role === 'NOVICE'
+                        ? $cm->cotisation->montant_novice
+                        : $cm->cotisation->montant_ancien,
+                ],
+                'statut'          => $cm->statut,
+                'montant_restant' => $cm->montant_restant,
+            ]);
 
         return response()->json([
             'success' => true,
-            'data'    => $cotisations->map(fn($c) => $this->format($c)),
+            'data'    => $cotisations,
         ]);
     }
 
@@ -70,7 +94,6 @@ class CotisationController extends Controller
                 'statut'          => $request->statut ?? 'en_cours',
             ]);
 
-            // ✅ Assigner la cotisation à tous les membres sauf ADMIN
             $membres = User::where('role', '!=', 'ADMIN')->get();
 
             foreach ($membres as $membre) {
