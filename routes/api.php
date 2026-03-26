@@ -77,12 +77,13 @@ Route::prefix('accueil')->group(function () {
     Route::get('/activites', [AccueilController::class, 'activites']);
     Route::get('/bureau',    [AccueilController::class, 'bureau']);
 });
-
-// Administration
 Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
-    Route::post('/add-authorized-email', [AuthController::class, 'addAuthorizedEmail']);
-    Route::get('/authorized-emails', [AuthController::class, 'getAuthorizedEmails']);
-    Route::delete('/delete-authorized-email/{id}', [AuthController::class, 'deleteAuthorizedEmail']);
+    Route::post('/add-authorized-email', [AuthController::class, 'addAuthorizedEmail'])
+        ->middleware('permission:create_membre');
+    Route::get('/authorized-emails', [AuthController::class, 'getAuthorizedEmails'])
+        ->middleware('permission:show_membre');
+    Route::delete('/delete-authorized-email/{id}', [AuthController::class, 'deleteAuthorizedEmail'])
+        ->middleware('permission:delete_membre');
 });
 
 // FCM Token
