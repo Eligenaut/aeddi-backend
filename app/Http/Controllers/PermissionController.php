@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Validator;
 
 class PermissionController extends Controller
 {
-    private const VALID_ROLES = ['BUREAU', 'MEMBER'];
+    private const VALID_ROLES = ['NOVICE', 'BUREAU', 'MEMBER'];
 
     private const VALID_SUB_ROLES = [
         'PRESIDENT',
@@ -87,8 +87,8 @@ class PermissionController extends Controller
             );
 
             // ✅ Appliquer aux utilisateurs concernés
-            if ($role === 'MEMBER') {
-                $users = User::where('role', 'MEMBER')->get();
+            if ($role === 'MEMBER' || $role === 'NOVICE') {
+                $users = User::where('role', $role)->get();
             } else {
                 $users = User::where('role', $role)
                     ->whereJsonContains('sub_role', $subRole)
@@ -110,7 +110,6 @@ class PermissionController extends Controller
                     'users_updated' => $users->count(),
                 ]
             ], 200);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -151,8 +150,8 @@ class PermissionController extends Controller
             );
 
             // ✅ Appliquer aux utilisateurs concernés
-            if ($role === 'MEMBER') {
-                $users = User::where('role', 'MEMBER')->get();
+            if ($role === 'MEMBER' || $role === 'NOVICE') {
+                $users = User::where('role', $role)->get();
             } else {
                 $users = User::where('role', $role)
                     ->whereJsonContains('sub_role', $subRole)
@@ -168,7 +167,6 @@ class PermissionController extends Controller
                 'success' => true,
                 'message' => 'Permissions réinitialisées avec succès',
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -209,7 +207,6 @@ class PermissionController extends Controller
                     'permissions' => $permissions ?? [],
                 ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -243,7 +240,6 @@ class PermissionController extends Controller
                     'permissions' => $permissions,
                 ]
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -275,7 +271,6 @@ class PermissionController extends Controller
                 'message' => 'Permissions supprimées avec succès',
                 'user_id' => $userId
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -307,7 +302,6 @@ class PermissionController extends Controller
                 'permission'    => $permission,
                 'user_id'       => $userId
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
