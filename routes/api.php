@@ -28,13 +28,37 @@ Route::prefix('auth')->group(function () {
 
 // Membres
 Route::middleware('auth:sanctum')->prefix('members')->group(function () {
-    Route::get('/', [MemberController::class, 'index']);
-    Route::get('/stats', [MemberController::class, 'stats']);
-    Route::get('/cotisation-stats', [MemberController::class, 'cotisationStats']);
-    Route::get('/{id}', [MemberController::class, 'show']);
-    Route::put('/{id}', [MemberController::class, 'update']);
-    Route::delete('/{id}', [MemberController::class, 'destroy']);
+    Route::get('/', [MemberController::class, 'index'])->middleware('permission:show_membre');
+    Route::get('/stats', [MemberController::class, 'stats'])->middleware('permission:show_membre');
+    Route::get('/cotisation-stats', [MemberController::class, 'cotisationStats'])->middleware('permission:show_membre');
+    Route::get('/{id}', [MemberController::class, 'show'])->middleware('permission:show_membre');
+    Route::put('/{id}', [MemberController::class, 'update'])->middleware('permission:edit_membre');
+    Route::delete('/{id}', [MemberController::class, 'destroy'])->middleware('permission:delete_membre');
 });
+
+// Cotisations
+Route::middleware('auth:sanctum')->prefix('cotisations')->group(function () {
+    Route::get('/', [CotisationController::class, 'index'])->middleware('permission:show_cotisation');
+    Route::post('/', [CotisationController::class, 'store'])->middleware('permission:create_cotisation');
+    Route::get('/member', [CotisationController::class, 'getMyCotisations'])->middleware('permission:show_cotisation');
+    Route::get('/member/{userId}', [CotisationController::class, 'getMemberCotisations'])->middleware('permission:show_cotisation');
+    Route::get('/{id}', [CotisationController::class, 'show'])->middleware('permission:show_cotisation');
+    Route::put('/{id}', [CotisationController::class, 'update'])->middleware('permission:edit_cotisation');
+    Route::delete('/{id}', [CotisationController::class, 'destroy'])->middleware('permission:delete_cotisation');
+    Route::put('/{cotisationId}/member/{userId}/status', [CotisationController::class, 'updateMemberStatus'])->middleware('permission:edit_cotisation');
+    Route::delete('/{cotisationId}/member/{userId}', [CotisationController::class, 'deleteMemberCotisation'])->middleware('permission:delete_cotisation');
+});
+
+// Activités
+Route::middleware('auth:sanctum')->prefix('activites')->group(function () {
+    Route::get('/', [ActiviteController::class, 'index'])->middleware('permission:show_activite');
+    Route::post('/', [ActiviteController::class, 'store'])->middleware('permission:create_activite');
+    Route::get('/{id}', [ActiviteController::class, 'show'])->middleware('permission:show_activite');
+    Route::put('/{id}', [ActiviteController::class, 'update'])->middleware('permission:edit_activite');
+    Route::delete('/{id}', [ActiviteController::class, 'destroy'])->middleware('permission:delete_activite');
+    Route::delete('/{id}/galerie/{index}', [ActiviteController::class, 'deleteGalerieImage'])->middleware('permission:edit_activite');
+});
+
 
 Route::middleware('auth:sanctum')->get('/dashboard-stats', [MemberController::class, 'dashboardStats']);
 
@@ -42,34 +66,11 @@ Route::middleware('auth:sanctum')->get('/dashboard-stats', [MemberController::cl
 Route::middleware('auth:sanctum')->get('/export/users', [ExportController::class, 'exportUsers']);
 Route::middleware('auth:sanctum')->get('/export/users/xlsx', [ExportController::class, 'exportUsersXlsx']);
 
-Route::middleware('auth:sanctum')->prefix('cotisations')->group(function () {
-    Route::get('/', [CotisationController::class, 'index']);
-    Route::post('/', [CotisationController::class, 'store']);
-    Route::get('/member', [CotisationController::class, 'getMyCotisations']);
-    Route::get('/member/{userId}', [CotisationController::class, 'getMemberCotisations']);
-    Route::get('/{id}', [CotisationController::class, 'show']);
-    Route::put('/{id}', [CotisationController::class, 'update']);
-    Route::delete('/{id}', [CotisationController::class, 'destroy']);
-    Route::put('/{cotisationId}/member/{userId}/status', [CotisationController::class, 'updateMemberStatus']);
-    Route::delete('/{cotisationId}/member/{userId}', [CotisationController::class, 'deleteMemberCotisation']);
-});
-
-
 //Permission
 Route::prefix('permissions')->group(function () {
     Route::post('/add', [PermissionController::class, 'addPermission']);
     Route::get('/get', [PermissionController::class, 'getRolePermissions']);
     Route::post('/reset', [PermissionController::class, 'resetPermissions']);
-});
-
-// Activités
-Route::middleware('auth:sanctum')->prefix('activites')->group(function () {
-    Route::get('/', [ActiviteController::class, 'index']);
-    Route::post('/', [ActiviteController::class, 'store']);
-    Route::get('/{id}', [ActiviteController::class, 'show']);
-    Route::put('/{id}', [ActiviteController::class, 'update']);
-    Route::delete('/{id}', [ActiviteController::class, 'destroy']);
-    Route::delete('/{id}/galerie/{index}', [ActiviteController::class, 'deleteGalerieImage']);
 });
 
 Route::prefix('accueil')->group(function () {
