@@ -14,17 +14,42 @@ class CotisationController extends Controller
     private function format(Cotisation $cotisation): array
     {
         return [
-            'id'            => $cotisation->id,
-            'nom'           => $cotisation->nom,
-            'description'   => $cotisation->description,
+            'id'             => $cotisation->id,
+            'nom'            => $cotisation->nom,
+            'description'    => $cotisation->description,
             'montant_novice' => $cotisation->montant_novice,
             'montant_ancien' => $cotisation->montant_ancien,
-            'date_debut'    => $cotisation->date_debut->toDateString(),
-            'date_fin'      => $cotisation->date_fin->toDateString(),
-            'statut'        => $cotisation->statut,
-            'created_at'    => $cotisation->created_at,
-            'total_membres' => $cotisation->total_membres ?? 0,
-            'membres_payes' => $cotisation->membres_payes ?? 0,
+            'date_debut'     => $cotisation->date_debut->toDateString(),
+            'date_fin'       => $cotisation->date_fin->toDateString(),
+            'statut'         => $cotisation->statut,
+            'created_at'     => $cotisation->created_at,
+            'total_membres'  => $cotisation->total_membres ?? 0,
+            'membres_payes'  => $cotisation->membres_payes ?? 0,
+        ];
+    }
+
+    // ─── Helper : données complètes d'une cotisation (avec counts) ──
+    private function formatFull(Cotisation $cotisation): array
+    {
+        $counts = Cotisation::withCount([
+            'cotisationMembres as total_membres',
+            'cotisationMembres as membres_payes' => fn($q) => $q->where('statut', 'paye'),
+            'cotisationMembres as membres_non_payes' => fn($q) => $q->whereIn('statut', ['non_paye', 'reste']),
+        ])->find($cotisation->id);
+
+        return [
+            'id'                => $cotisation->id,
+            'nom'               => $cotisation->nom,
+            'description'       => $cotisation->description,
+            'montant_novice'    => $cotisation->montant_novice,
+            'montant_ancien'    => $cotisation->montant_ancien,
+            'date_debut'        => $cotisation->date_debut->toDateString(),
+            'date_fin'          => $cotisation->date_fin->toDateString(),
+            'statut'            => $cotisation->statut,
+            'created_at'        => $cotisation->created_at,
+            'total_membres'     => $counts->total_membres ?? 0,
+            'membres_payes'     => $counts->membres_payes ?? 0,
+            'membres_non_payes' => $counts->membres_non_payes ?? 0,
         ];
     }
 
@@ -41,6 +66,9 @@ class CotisationController extends Controller
                 ], 401);
             }
 
+            // ════════════════════════════════════════════════
+            // ADMIN
+            // ════════════════════════════════════════════════
             if (strtoupper($user->role) === 'ADMIN') {
                 $cotisations = Cotisation::withCount([
                     'cotisationMembres as total_membres',
@@ -85,35 +113,58 @@ class CotisationController extends Controller
                 ]);
             }
 
-            // MEMBRE → ses propres cotisations
-            $membre = User::find($user->id);
-
-            $cotisations = CotisationMembre::with('cotisation')
+            // ════════════════════════════════════════════════
+            // MEMBRE
+            // ════════════════════════════════════════════════
+            $cotisationsMembre = CotisationMembre::with('cotisation')
                 ->where('user_id', $user->id)
-                ->get()
-                ->map(fn($cm) => [
+                ->get();
+
+            $data = $cotisationsMembre->map(function ($cm) use ($user) {
+                $c = $cm->cotisation;
+
+                // Counts pour cette cotisation
+                $total_membres     = CotisationMembre::where('cotisation_id', $c->id)->count();
+                $membres_payes     = CotisationMembre::where('cotisation_id', $c->id)->where('statut', 'paye')->count();
+                $membres_non_payes = CotisationMembre::where('cotisation_id', $c->id)->whereIn('statut', ['non_paye', 'reste'])->count();
+
+                // Montant spécifique au membre selon son rôle
+                $montant = $user->role === 'NOVICE'
+                    ? $c->montant_novice
+                    : $c->montant_ancien;
+
+                return [
                     'cotisation' => [
-                        'id'  => $cm->cotisation->id,
-                        'nom' => $cm->cotisation->nom,
-                        'montant' => $user->role === 'NOVICE'
-                            ? $cm->cotisation->montant_novice
-                            : $cm->cotisation->montant_ancien,
+                        'id'                => $c->id,
+                        'nom'               => $c->nom,
+                        'description'       => $c->description,
+                        'montant_novice'    => $c->montant_novice,
+                        'montant_ancien'    => $c->montant_ancien,
+                        'montant'           => $montant,
+                        'date_debut'        => $c->date_debut->toDateString(),
+                        'date_fin'          => $c->date_fin->toDateString(),
+                        'statut'            => $c->statut,
+                        'created_at'        => $c->created_at,
+                        'total_membres'     => $total_membres,
+                        'membres_payes'     => $membres_payes,
+                        'membres_non_payes' => $membres_non_payes,
                     ],
                     'statut'          => $cm->statut,
                     'montant_restant' => $cm->montant_restant,
-                ]);
+                ];
+            });
 
             $stats = [
-                'total_cotisations'    => $cotisations->count(),
-                'total_payees'         => $cotisations->where('statut', 'paye')->count(),
-                'total_non_payees'     => $cotisations->whereIn('statut', ['non_paye', 'reste'])->count(),
-                'montant_restant_total' => $cotisations->whereIn('statut', ['non_paye', 'reste'])->sum('montant_restant'),
+                'total_cotisations'    => $data->count(),
+                'total_payees'         => $data->where('statut', 'paye')->count(),
+                'total_non_payees'     => $data->whereIn('statut', ['non_paye', 'reste'])->count(),
+                'montant_restant_total' => $data->whereIn('statut', ['non_paye', 'reste'])->sum('montant_restant'),
             ];
 
             return response()->json([
                 'success' => true,
                 'stats'   => $stats,
-                'data'    => $cotisations,
+                'data'    => $data,
             ]);
         } catch (\Exception $e) {
             Log::error('Erreur index cotisations', [
@@ -146,13 +197,13 @@ class CotisationController extends Controller
 
         try {
             $cotisation = Cotisation::create([
-                'nom'             => $request->nom,
-                'description'     => $request->description,
-                'montant_novice'  => $request->montant_novice,
-                'montant_ancien'  => $request->montant_ancien,
-                'date_debut'      => $request->date_debut,
-                'date_fin'        => $request->date_fin,
-                'statut'          => $request->statut ?? 'en_cours',
+                'nom'            => $request->nom,
+                'description'    => $request->description,
+                'montant_novice' => $request->montant_novice,
+                'montant_ancien' => $request->montant_ancien,
+                'date_debut'     => $request->date_debut,
+                'date_fin'       => $request->date_fin,
+                'statut'         => $request->statut ?? 'en_cours',
             ]);
 
             // ✅ Assigner la cotisation à tous les membres sauf ADMIN
@@ -244,7 +295,7 @@ class CotisationController extends Controller
             'montant_ancien',
             'date_debut',
             'date_fin',
-            'statut'
+            'statut',
         ]));
 
         // 🔄 Mettre à jour les montants restants pour chaque membre assigné
@@ -282,7 +333,7 @@ class CotisationController extends Controller
         ]);
     }
 
-    // ─── Récupérer cotisations d’un membre ─────────────────
+    // ─── Récupérer cotisations d'un membre ─────────────────
     public function getMemberCotisations($memberId)
     {
         $membre = User::find($memberId);
@@ -298,9 +349,9 @@ class CotisationController extends Controller
             ->get()
             ->map(fn($cm) => [
                 'cotisation'      => [
-                    'id'           => $cm->cotisation->id,
-                    'nom'          => $cm->cotisation->nom,
-                    'montant'      => $cm->user->role === 'NOVICE'
+                    'id'      => $cm->cotisation->id,
+                    'nom'     => $cm->cotisation->nom,
+                    'montant' => $membre->role === 'NOVICE'
                         ? $cm->cotisation->montant_novice
                         : $cm->cotisation->montant_ancien,
                 ],
