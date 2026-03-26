@@ -163,13 +163,13 @@ class MemberController extends Controller
                 'email' => $validated['email'],
             ];
 
-            // Gestion des rôles et permissions
             if (isset($validated['role'])) {
-                $newRole     = $validated['role'];
+                $newRole = $validated['role'];
                 $newSubRoles = $newRole === 'BUREAU' ? ($validated['subRoles'] ?? []) : [];
-                $oldRole     = $member->role;
-                $oldSubRole  = json_decode($member->sub_role ?? '[]', true)[0] ?? null;
-                $newSubRole  = $newSubRoles[0] ?? null;
+
+                $oldRole    = $member->role;
+                $oldSubRole = json_decode($member->sub_role ?? '[]', true)[0] ?? null;
+                $newSubRole = $newSubRoles[0] ?? null;
 
                 if ($newRole !== $oldRole || $newSubRole !== $oldSubRole) {
                     $newPermissions = RolePermission::findPermissions($newRole, $newSubRole);
@@ -181,8 +181,6 @@ class MemberController extends Controller
             }
 
             $member->update($updateData);
-
-            // Mise à jour des métas
             $metas = [
                 'nom'           => $validated['nom'],
                 'prenom'        => $validated['prenom'],
