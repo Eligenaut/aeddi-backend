@@ -152,7 +152,7 @@ class MemberController extends Controller
             'blocCampus'    => 'nullable|string|max:255',
             'quartier'      => 'nullable|string|max:255',
             'image'         => 'nullable|string',
-            'role'          => 'nullable|string|in:MEMBER,BUREAU',
+            'role'          => 'nullable|string|in:NOVICE,MEMBER,BUREAU',
             'subRoles'      => 'nullable|array',
             'subRoles.*'    => 'string',
         ]);
