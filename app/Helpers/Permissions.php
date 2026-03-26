@@ -2,6 +2,8 @@
 
 namespace App\Helpers;
 
+use App\Models\RolePermission;
+
 class Permissions
 {
     // ── Toutes les permissions disponibles ──────────────────────────────
@@ -37,8 +39,34 @@ class Permissions
         // Admin = tout autorisé
         if ($user->isAdmin()) return true;
 
-        $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
-        return in_array($permission, $permissions);
+        $role = strtoupper((string) ($user->role ?? ''));
+
+        // 1) Permissions spécifiques utilisateur (meta)
+        $metaPermissions = json_decode($user->getMeta('permissions'), true);
+        $metaPermissions = is_array($metaPermissions) ? $metaPermissions : [];
+
+        // 2) Permissions par défaut selon le rôle (fallback)
+        $defaultPermissions = self::DEFAULTS[$role] ?? [];
+
+        // 3) Permissions définies par rôle/sub-rôle (source "role_permissions")
+        // sub_role en DB = JSON string; on prend la 1ère valeur si présent, sinon null.
+        $subRoles = json_decode($user->sub_role ?? '[]', true);
+        $subRole = is_array($subRoles) && count($subRoles) > 0 ? (string) $subRoles[0] : null;
+        $rolePermissions = [];
+        try {
+            $rolePermissions = RolePermission::findPermissions($role, $subRole);
+        } catch (\Throwable $e) {
+            // On reste permissif côté erreur, en s'appuyant sur defaults/meta.
+            $rolePermissions = [];
+        }
+
+        $all = array_values(array_unique(array_merge(
+            $defaultPermissions,
+            $rolePermissions,
+            $metaPermissions,
+        )));
+
+        return in_array($permission, $all, true);
     }
 
     // ── Retourner une réponse JSON "refusé" ─────────────────────────────
