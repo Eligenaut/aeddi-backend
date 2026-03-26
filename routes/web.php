@@ -56,15 +56,7 @@ Route::get('/sitemap.xml', function () {
     return response($sitemap, 200)->header('Content-Type', 'text/xml');
 });
 
-// Routes API existantes
-Route::get('/api/activites', [ActiviteController::class, 'index']);
-Route::post('/api/activites', [ActiviteController::class, 'store']);
-Route::get('/api/activites/{id}', [ActiviteController::class, 'show']);
-Route::put('/api/activites/{id}', [ActiviteController::class, 'update']);
-Route::delete('/api/activites/{id}', [ActiviteController::class, 'destroy']);
-
-Route::get('/api/cotisations', [CotisationController::class, 'index']);
-Route::post('/api/cotisations', [CotisationController::class, 'store']);
-Route::get('/api/cotisations/{id}', [CotisationController::class, 'show']);
-Route::put('/api/cotisations/{id}', [CotisationController::class, 'update']);
-Route::delete('/api/cotisations/{id}', [CotisationController::class, 'destroy']);
+// IMPORTANT:
+// Ne pas déclarer de routes `/api/*` dans `routes/web.php`.
+// Les endpoints API protégés (auth + permissions) sont dans `routes/api.php`
+// et sont automatiquement préfixés par `/api` via `RouteServiceProvider`.
