@@ -51,30 +51,80 @@ class CotisationController extends Controller
                     'cotisationMembres as membres_non_payes' => fn($q) => $q->whereIn('statut', ['non_paye', 'reste']),
                 ])->orderBy('created_at', 'desc')->get();
 
-                $data = $cotisations->map(fn($c) => [
-                    'cotisation' => [
-                        'id'                => $c->id,
-                        'nom'               => $c->nom,
-                        'description'       => $c->description,
-                        'montant_novice'    => $c->montant_novice,
-                        'montant_ancien'    => $c->montant_ancien,
-                        'date_debut'        => $c->date_debut->toDateString(),
-                        'date_fin'          => $c->date_fin->toDateString(),
-                        'statut'            => $c->statut,
-                        'created_at'        => $c->created_at,
-                        'total_membres'     => $c->total_membres ?? 0,
-                        'membres_payes'     => $c->membres_payes ?? 0,
-                        'membres_non_payes' => $c->membres_non_payes ?? 0,
-                        'montant_total'     => CotisationMembre::where('cotisation_id', $c->id)
-                            ->where('statut', 'paye')
-                            ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
-                            ->selectRaw('SUM(CASE WHEN users.role = "NOVICE" THEN ? ELSE ? END) as total', [
-                                $c->montant_novice,
-                                $c->montant_ancien,
-                            ])
-                            ->value('total') ?? 0,
-                    ],
-                ]);
+                $data = $cotisations->map(function ($c) {
+                    // ── Novices ──────────────────────────────────────────
+                    $total_novices = CotisationMembre::where('cotisation_id', $c->id)
+                        ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
+                        ->where('users.role', 'NOVICE')
+                        ->count();
+
+                    $novices_payes = CotisationMembre::where('cotisation_id', $c->id)
+                        ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
+                        ->where('users.role', 'NOVICE')
+                        ->where('cotisation_membre.statut', 'paye')
+                        ->count();
+
+                    $novices_non_payes = $total_novices - $novices_payes;
+
+                    // ── Anciens (MEMBER + BUREAU) ─────────────────────────
+                    $total_anciens = CotisationMembre::where('cotisation_id', $c->id)
+                        ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
+                        ->whereIn('users.role', ['MEMBER', 'BUREAU'])
+                        ->count();
+
+                    $anciens_payes = CotisationMembre::where('cotisation_id', $c->id)
+                        ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
+                        ->whereIn('users.role', ['MEMBER', 'BUREAU'])
+                        ->where('cotisation_membre.statut', 'paye')
+                        ->count();
+
+                    $anciens_non_payes = $total_anciens - $anciens_payes;
+
+                    // ── Montant collecté ──────────────────────────────────
+                    $montant_total = CotisationMembre::where('cotisation_id', $c->id)
+                        ->where('cotisation_membre.statut', 'paye')
+                        ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
+                        ->selectRaw('SUM(CASE WHEN users.role = "NOVICE" THEN ? ELSE ? END) as total', [
+                            $c->montant_novice,
+                            $c->montant_ancien,
+                        ])
+                        ->value('total') ?? 0;
+
+                    // ── Statuts all paid ──────────────────────────────────
+                    $all_paid         = ($c->membres_non_payes === 0) && ($c->total_membres > 0);
+                    $novices_all_paid = ($novices_non_payes === 0) && ($total_novices > 0);
+                    $anciens_all_paid = ($anciens_non_payes === 0) && ($total_anciens > 0);
+
+                    return [
+                        'cotisation' => [
+                            'id'                => $c->id,
+                            'nom'               => $c->nom,
+                            'description'       => $c->description,
+                            'montant_novice'    => $c->montant_novice,
+                            'montant_ancien'    => $c->montant_ancien,
+                            'date_debut'        => $c->date_debut->toDateString(),
+                            'date_fin'          => $c->date_fin->toDateString(),
+                            'statut'            => $c->statut,
+                            'created_at'        => $c->created_at,
+                            'total_membres'     => $c->total_membres ?? 0,
+                            'membres_payes'     => $c->membres_payes ?? 0,
+                            'membres_non_payes' => $c->membres_non_payes ?? 0,
+                            'montant_total'     => $montant_total,
+                            // ── Novices ──
+                            'total_novices'     => $total_novices,
+                            'novices_payes'     => $novices_payes,
+                            'novices_non_payes' => $novices_non_payes,
+                            'novices_all_paid'  => $novices_all_paid,
+                            // ── Anciens (MEMBER + BUREAU) ──
+                            'total_anciens'     => $total_anciens,
+                            'anciens_payes'     => $anciens_payes,
+                            'anciens_non_payes' => $anciens_non_payes,
+                            'anciens_all_paid'  => $anciens_all_paid,
+                            // ── Global ──
+                            'all_paid'          => $all_paid,
+                        ],
+                    ];
+                });
 
                 $stats = [
                     'total_cotisations'       => $cotisations->count(),
@@ -130,9 +180,9 @@ class CotisationController extends Controller
             });
 
             $stats = [
-                'total_cotisations'    => $data->count(),
-                'total_payees'         => $data->where('statut', 'paye')->count(),
-                'total_non_payees'     => $data->whereIn('statut', ['non_paye', 'reste'])->count(),
+                'total_cotisations'     => $data->count(),
+                'total_payees'          => $data->where('statut', 'paye')->count(),
+                'total_non_payees'      => $data->whereIn('statut', ['non_paye', 'reste'])->count(),
                 'montant_restant_total' => $data->whereIn('statut', ['non_paye', 'reste'])->sum('montant_restant'),
             ];
 
