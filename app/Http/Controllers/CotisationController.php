@@ -17,8 +17,8 @@ class CotisationController extends Controller
             'id'             => $cotisation->id,
             'nom'            => $cotisation->nom,
             'description'    => $cotisation->description,
-            'montant_novice' => (float) $cotisation->montant_novice,
-            'montant_ancien' => (float) $cotisation->montant_ancien,
+            'montant_novice' => $cotisation->montant_novice,
+            'montant_ancien' => $cotisation->montant_ancien,
             'date_debut'     => $cotisation->date_debut->toDateString(),
             'date_fin'       => $cotisation->date_fin->toDateString(),
             'statut'         => $cotisation->statut,
@@ -41,6 +41,9 @@ class CotisationController extends Controller
                 ], 401);
             }
 
+            // ════════════════════════════════════════════════
+            // ADMIN
+            // ════════════════════════════════════════════════
             if (strtoupper($user->role) === 'ADMIN') {
                 $cotisations = Cotisation::withCount([
                     'cotisationMembres as total_membres',
@@ -53,8 +56,8 @@ class CotisationController extends Controller
                         'id'                => $c->id,
                         'nom'               => $c->nom,
                         'description'       => $c->description,
-                        'montant_novice'    => (float) $c->montant_novice,
-                        'montant_ancien'    => (float) $c->montant_ancien,
+                        'montant_novice'    => $c->montant_novice,
+                        'montant_ancien'    => $c->montant_ancien,
                         'date_debut'        => $c->date_debut->toDateString(),
                         'date_fin'          => $c->date_fin->toDateString(),
                         'statut'            => $c->statut,
@@ -62,12 +65,12 @@ class CotisationController extends Controller
                         'total_membres'     => $c->total_membres ?? 0,
                         'membres_payes'     => $c->membres_payes ?? 0,
                         'membres_non_payes' => $c->membres_non_payes ?? 0,
-                        'montant_total'     => (float) CotisationMembre::where('cotisation_id', $c->id)
+                        'montant_total'     => CotisationMembre::where('cotisation_id', $c->id)
                             ->where('statut', 'paye')
                             ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
                             ->selectRaw('SUM(CASE WHEN users.role = "NOVICE" THEN ? ELSE ? END) as total', [
-                                (float) $c->montant_novice,
-                                (float) $c->montant_ancien,
+                                $c->montant_novice,
+                                $c->montant_ancien,
                             ])
                             ->value('total') ?? 0,
                     ],
@@ -77,7 +80,7 @@ class CotisationController extends Controller
                     'total_cotisations'       => $cotisations->count(),
                     'total_membres_payes'     => $cotisations->sum('membres_payes'),
                     'total_membres_non_payes' => $cotisations->sum('membres_non_payes'),
-                    'montant_total_collecte'  => $data->sum(fn($item) => (float) $item['cotisation']['montant_total']),
+                    'montant_total_collecte'  => $data->sum(fn($item) => $item['cotisation']['montant_total']),
                 ];
 
                 return response()->json([
@@ -87,7 +90,9 @@ class CotisationController extends Controller
                 ]);
             }
 
-            // ───────── MEMBRE ─────────
+            // ════════════════════════════════════════════════
+            // MEMBRE
+            // ════════════════════════════════════════════════
             $cotisationsMembre = CotisationMembre::with('cotisation')
                 ->where('user_id', $user->id)
                 ->get();
@@ -100,16 +105,16 @@ class CotisationController extends Controller
                 $membres_non_payes = CotisationMembre::where('cotisation_id', $c->id)->whereIn('statut', ['non_paye', 'reste'])->count();
 
                 $montant = $user->role === 'NOVICE'
-                    ? (float) $c->montant_novice
-                    : (float) $c->montant_ancien;
+                    ? $c->montant_novice
+                    : $c->montant_ancien;
 
                 return [
                     'cotisation' => [
                         'id'                => $c->id,
                         'nom'               => $c->nom,
                         'description'       => $c->description,
-                        'montant_novice'    => (float) $c->montant_novice,
-                        'montant_ancien'    => (float) $c->montant_ancien,
+                        'montant_novice'    => $c->montant_novice,
+                        'montant_ancien'    => $c->montant_ancien,
                         'montant'           => $montant,
                         'date_debut'        => $c->date_debut->toDateString(),
                         'date_fin'          => $c->date_fin->toDateString(),
@@ -120,15 +125,15 @@ class CotisationController extends Controller
                         'membres_non_payes' => $membres_non_payes,
                     ],
                     'statut'          => $cm->statut,
-                    'montant_restant' => (float) $cm->montant_restant,
+                    'montant_restant' => $cm->montant_restant,
                 ];
             });
 
             $stats = [
-                'total_cotisations'     => $data->count(),
-                'total_payees'          => $data->where('statut', 'paye')->count(),
-                'total_non_payees'      => $data->whereIn('statut', ['non_paye', 'reste'])->count(),
-                'montant_restant_total' => $data->whereIn('statut', ['non_paye', 'reste'])->sum(fn($item) => (float) $item['montant_restant']),
+                'total_cotisations'    => $data->count(),
+                'total_payees'         => $data->where('statut', 'paye')->count(),
+                'total_non_payees'     => $data->whereIn('statut', ['non_paye', 'reste'])->count(),
+                'montant_restant_total' => $data->whereIn('statut', ['non_paye', 'reste'])->sum('montant_restant'),
             ];
 
             return response()->json([
@@ -169,8 +174,8 @@ class CotisationController extends Controller
             $cotisation = Cotisation::create([
                 'nom'            => $request->nom,
                 'description'    => $request->description,
-                'montant_novice' => (float) $request->montant_novice,
-                'montant_ancien' => (float) $request->montant_ancien,
+                'montant_novice' => $request->montant_novice,
+                'montant_ancien' => $request->montant_ancien,
                 'date_debut'     => $request->date_debut,
                 'date_fin'       => $request->date_fin,
                 'statut'         => $request->statut ?? 'en_cours',
@@ -180,8 +185,8 @@ class CotisationController extends Controller
 
             foreach ($membres as $membre) {
                 $montant = $membre->role === 'NOVICE'
-                    ? (float) $cotisation->montant_novice
-                    : (float) $cotisation->montant_ancien;
+                    ? $cotisation->montant_novice
+                    : $cotisation->montant_ancien;
 
                 CotisationMembre::firstOrCreate(
                     [
@@ -257,20 +262,20 @@ class CotisationController extends Controller
             'statut'         => 'sometimes|in:en_cours,terminee,en_attente,annulee',
         ]);
 
-        $cotisation->update([
-            'nom'            => $request->nom ?? $cotisation->nom,
-            'description'    => $request->description ?? $cotisation->description,
-            'montant_novice' => isset($request->montant_novice) ? (float) $request->montant_novice : $cotisation->montant_novice,
-            'montant_ancien' => isset($request->montant_ancien) ? (float) $request->montant_ancien : $cotisation->montant_ancien,
-            'date_debut'     => $request->date_debut ?? $cotisation->date_debut,
-            'date_fin'       => $request->date_fin ?? $cotisation->date_fin,
-            'statut'         => $request->statut ?? $cotisation->statut,
-        ]);
+        $cotisation->update($request->only([
+            'nom',
+            'description',
+            'montant_novice',
+            'montant_ancien',
+            'date_debut',
+            'date_fin',
+            'statut',
+        ]));
 
         foreach ($cotisation->cotisationMembres as $cm) {
             $montant = $cm->user->role === 'NOVICE'
-                ? (float) $cotisation->montant_novice
-                : (float) $cotisation->montant_ancien;
+                ? $cotisation->montant_novice
+                : $cotisation->montant_ancien;
 
             $cm->update(['montant_restant' => $montant]);
         }
@@ -320,11 +325,11 @@ class CotisationController extends Controller
                     'id'      => $cm->cotisation->id,
                     'nom'     => $cm->cotisation->nom,
                     'montant' => $membre->role === 'NOVICE'
-                        ? (float) $cm->cotisation->montant_novice
-                        : (float) $cm->cotisation->montant_ancien,
+                        ? $cm->cotisation->montant_novice
+                        : $cm->cotisation->montant_ancien,
                 ],
                 'statut'          => $cm->statut,
-                'montant_restant' => (float) $cm->montant_restant,
+                'montant_restant' => $cm->montant_restant,
             ]);
 
         return response()->json([
@@ -354,7 +359,7 @@ class CotisationController extends Controller
 
         $cotisationMembre->update([
             'statut'          => $request->statut,
-            'montant_restant' => $request->statut === 'reste' ? (float) $request->montant_restant : 0,
+            'montant_restant' => $request->statut === 'reste' ? $request->montant_restant : 0,
         ]);
 
         return response()->json([
