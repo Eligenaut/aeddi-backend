@@ -44,37 +44,44 @@ class CotisationController extends Controller
             if (strtoupper($user->role) === 'ADMIN') {
                 $cotisations = Cotisation::withCount([
                     'cotisationMembres as total_membres',
-                    'cotisationMembres as membres_payes' => function ($query) {
-                        $query->where('statut', 'paye');
-                    },
-                    'cotisationMembres as membres_non_payes' => function ($query) {
-                        $query->whereIn('statut', ['non_paye', 'reste']);
-                    },
+                    'cotisationMembres as membres_payes' => fn($q) => $q->where('statut', 'paye'),
+                    'cotisationMembres as membres_non_payes' => fn($q) => $q->whereIn('statut', ['non_paye', 'reste']),
                 ])->orderBy('created_at', 'desc')->get();
+
+                $data = $cotisations->map(fn($c) => [
+                    'id'                => $c->id,
+                    'nom'               => $c->nom,
+                    'description'       => $c->description,
+                    'montant_novice'    => $c->montant_novice,
+                    'montant_ancien'    => $c->montant_ancien,
+                    'date_debut'        => $c->date_debut->toDateString(),
+                    'date_fin'          => $c->date_fin->toDateString(),
+                    'statut'            => $c->statut,
+                    'created_at'        => $c->created_at,
+                    'total_membres'     => $c->total_membres ?? 0,
+                    'membres_payes'     => $c->membres_payes ?? 0,
+                    'membres_non_payes' => $c->membres_non_payes ?? 0,
+                    'montant_total'     => CotisationMembre::where('cotisation_id', $c->id)
+                        ->where('statut', 'paye')
+                        ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
+                        ->selectRaw('SUM(CASE WHEN users.role = "NOVICE" THEN ? ELSE ? END) as total', [
+                            $c->montant_novice,
+                            $c->montant_ancien,
+                        ])
+                        ->value('total') ?? 0,
+                ]);
+
+                $stats = [
+                    'total_cotisations'       => $cotisations->count(),
+                    'total_membres_payes'     => $cotisations->sum('membres_payes'),
+                    'total_membres_non_payes' => $cotisations->sum('membres_non_payes'),
+                    'montant_total_collecte'  => $data->sum('montant_total'),
+                ];
 
                 return response()->json([
                     'success' => true,
-                    'data'    => $cotisations->map(fn($c) => [
-                        'id'                => $c->id,
-                        'nom'               => $c->nom,
-                        'description'       => $c->description,
-                        'montant_novice'    => $c->montant_novice,
-                        'montant_ancien'    => $c->montant_ancien,
-                        'date_debut'        => $c->date_debut->toDateString(),
-                        'date_fin'          => $c->date_fin->toDateString(),
-                        'statut'            => $c->statut,
-                        'created_at'        => $c->created_at,
-                        'total_membres'     => $c->total_membres ?? 0,
-                        'membres_payes'     => $c->membres_payes ?? 0,
-                        'membres_non_payes' => $c->membres_non_payes ?? 0,
-                        'montant_total'     => CotisationMembre::where('cotisation_id', $c->id)
-                            ->join('users', 'users.id', '=', 'cotisation_membre.user_id')
-                            ->selectRaw('SUM(CASE WHEN users.role = "NOVICE" THEN ? ELSE ? END) as total', [
-                                $c->montant_novice,
-                                $c->montant_ancien,
-                            ])
-                            ->value('total') ?? 0,
-                    ]),
+                    'stats'   => $stats,
+                    'data'    => $data,
                 ]);
             }
 
@@ -82,13 +89,13 @@ class CotisationController extends Controller
             $membre = User::find($user->id);
 
             $cotisations = CotisationMembre::with('cotisation')
-                ->where('user_id', $membre->id)
+                ->where('user_id', $user->id)
                 ->get()
                 ->map(fn($cm) => [
                     'cotisation' => [
-                        'id'      => $cm->cotisation->id,
-                        'nom'     => $cm->cotisation->nom,
-                        'montant' => $membre->role === 'NOVICE'
+                        'id'  => $cm->cotisation->id,
+                        'nom' => $cm->cotisation->nom,
+                        'montant' => $user->role === 'NOVICE'
                             ? $cm->cotisation->montant_novice
                             : $cm->cotisation->montant_ancien,
                     ],
@@ -96,8 +103,16 @@ class CotisationController extends Controller
                     'montant_restant' => $cm->montant_restant,
                 ]);
 
+            $stats = [
+                'total_cotisations'    => $cotisations->count(),
+                'total_payees'         => $cotisations->where('statut', 'paye')->count(),
+                'total_non_payees'     => $cotisations->whereIn('statut', ['non_paye', 'reste'])->count(),
+                'montant_restant_total' => $cotisations->whereIn('statut', ['non_paye', 'reste'])->sum('montant_restant'),
+            ];
+
             return response()->json([
                 'success' => true,
+                'stats'   => $stats,
                 'data'    => $cotisations,
             ]);
         } catch (\Exception $e) {
