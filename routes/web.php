@@ -57,8 +57,8 @@ Route::get('/sitemap.xml', function () {
 });
 
 Route::get('/send-test', function () {
-    event(new TestNotification("Hello depuis Laravel 🚀"));
-    return "Event envoyé !";
+    broadcast(new TestNotification("Hello 👋"));
+    return "Event envoyé";
 });
 
 // IMPORTANT:
