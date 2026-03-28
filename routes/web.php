@@ -5,7 +5,7 @@ use App\Http\Controllers\ActiviteController;
 use App\Http\Controllers\CotisationController;
 use Laravel\Socialite\Facades\Socialite;
 use App\Http\Controllers\AuthController;
-
+use App\Events\TestNotification;
 Route::get('/', function () {
     return view('welcome');
 });
@@ -54,6 +54,11 @@ Route::get('/sitemap.xml', function () {
     $sitemap .= '</urlset>';
 
     return response($sitemap, 200)->header('Content-Type', 'text/xml');
+});
+
+Route::get('/send-test', function () {
+    event(new TestNotification("Hello depuis Laravel 🚀"));
+    return "Event envoyé !";
 });
 
 // IMPORTANT:
