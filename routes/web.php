@@ -3,9 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ActiviteController;
 use App\Http\Controllers\CotisationController;
-use Laravel\Socialite\Facades\Socialite;
 use App\Http\Controllers\AuthController;
-use App\Events\TestNotification;
 Route::get('/', function () {
     return view('welcome');
 });
@@ -55,13 +53,3 @@ Route::get('/sitemap.xml', function () {
 
     return response($sitemap, 200)->header('Content-Type', 'text/xml');
 });
-
-Route::get('/send-test', function () {
-    broadcast(new TestNotification("Hello 👋"));
-    return "Event envoyé";
-});
-
-// IMPORTANT:
-// Ne pas déclarer de routes `/api/*` dans `routes/web.php`.
-// Les endpoints API protégés (auth + permissions) sont dans `routes/api.php`
-// et sont automatiquement préfixés par `/api` via `RouteServiceProvider`.
