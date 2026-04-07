@@ -9,7 +9,6 @@ use App\Http\Controllers\ActiviteController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\AccueilController;
 use App\Http\Controllers\PermissionController;
-use App\Http\Controllers\NotificationController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
@@ -85,13 +84,6 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::delete('/delete-authorized-email/{id}', [AuthController::class, 'deleteAuthorizedEmail'])
         ->middleware('permission:delete_membre');
 });
-
-// FCM Token
-Route::post('/fcm-token', [NotificationController::class, 'saveFcmToken'])->middleware('auth:sanctum');
-
-// Notifications
-Route::post('/notifications/send-all', [NotificationController::class, 'sendToAll'])->middleware('auth:sanctum');
-Route::post('/notifications/send-user/{id}', [NotificationController::class, 'sendToUser'])->middleware('auth:sanctum');
 
 Route::get('/api/test', function () {
     return ['status' => 'OK'];
