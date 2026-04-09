@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Activite;
+use App\Models\User;
+use App\Models\UserNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cache;
@@ -82,6 +84,73 @@ class ActiviteController extends Controller
         ];
     }
 
+    private function notifyActiviteCreated(Request $request, Activite $activite): void
+    {
+        $actor = $request->user();
+        $actorName = $actor?->name ?? 'Un administrateur';
+
+        $recipients = User::query()
+            ->where('role', '!=', 'ADMIN')
+            ->when($actor?->id, fn ($q) => $q->where('id', '!=', $actor->id))
+            ->pluck('id');
+
+        if ($recipients->isEmpty()) return;
+
+        $payload = [
+            'message' => "{$actorName} a ajouté l’activité « {$activite->nom} ».",
+            'activite_id' => $activite->id,
+            'nom' => $activite->nom,
+            'created_at' => $activite->created_at?->toISOString(),
+        ];
+
+        $rows = $recipients->map(fn ($uid) => [
+            'user_id' => $uid,
+            'type' => 'activite.created',
+            'data' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            'read_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ])->all();
+
+        UserNotification::insert($rows);
+    }
+
+    private function notifyActiviteUpdated(Request $request, Activite $activite, ?string $oldNom): void
+    {
+        $actor = $request->user();
+        $actorName = $actor?->name ?? 'Un administrateur';
+
+        $recipients = User::query()
+            ->where('role', '!=', 'ADMIN')
+            ->when($actor?->id, fn ($q) => $q->where('id', '!=', $actor->id))
+            ->pluck('id');
+
+        if ($recipients->isEmpty()) return;
+
+        $titlePart = ($oldNom && $oldNom !== $activite->nom)
+            ? "a modifié l’activité « {$oldNom} » en « {$activite->nom} »."
+            : "a modifié l’activité « {$activite->nom} ».";
+
+        $payload = [
+            'message' => "{$actorName} {$titlePart}",
+            'activite_id' => $activite->id,
+            'old_nom' => $oldNom,
+            'nom' => $activite->nom,
+            'updated_at' => $activite->updated_at?->toISOString(),
+        ];
+
+        $rows = $recipients->map(fn ($uid) => [
+            'user_id' => $uid,
+            'type' => 'activite.updated',
+            'data' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            'read_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ])->all();
+
+        UserNotification::insert($rows);
+    }
+
     // ─── CRUD ─────────────────────────────────────────────────
 
     public function index()
@@ -137,6 +206,7 @@ class ActiviteController extends Controller
 
             // Invalidation cache "liste récente" pour le polling
             Cache::forget('activites:latest:5');
+            $this->notifyActiviteCreated($request, $activite);
 
             return response()->json([
                 'success' => true,
@@ -250,6 +320,7 @@ class ActiviteController extends Controller
             $activite->setMeta('galerie', array_merge($anciens, $nouveaux));
         }
 
+        $oldNom = $activite->nom;
         $activite->update($request->only([
             'nom',
             'description',
@@ -261,6 +332,8 @@ class ActiviteController extends Controller
             'image',
             'image_lieu'
         ]));
+
+        $this->notifyActiviteUpdated($request, $activite, $oldNom);
 
         return response()->json([
             'success' => true,

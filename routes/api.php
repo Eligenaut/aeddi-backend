@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MemberController;
 use App\Http\Controllers\CotisationController;
 use App\Http\Controllers\ActiviteController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\AccueilController;
 use App\Http\Controllers\PermissionController;
@@ -61,6 +62,16 @@ Route::middleware('auth:sanctum')->prefix('activites')->group(function () {
 
 
 Route::middleware('auth:sanctum')->get('/dashboard-stats', [MemberController::class, 'dashboardStats']);
+
+// Notifications (polling)
+Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
+    Route::get('/', [NotificationController::class, 'index']);
+    Route::get('/poll', [NotificationController::class, 'poll']);
+    Route::post('/read-all', [NotificationController::class, 'readAll']);
+    Route::post('/{id}/read', [NotificationController::class, 'markRead']);
+    Route::post('/{id}/unread', [NotificationController::class, 'markUnread']);
+    Route::delete('/{id}', [NotificationController::class, 'destroy']);
+});
 
 // Export
 Route::middleware('auth:sanctum')->get('/export/users', [ExportController::class, 'exportUsers']);
