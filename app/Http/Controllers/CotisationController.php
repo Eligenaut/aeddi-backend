@@ -5,11 +5,47 @@ namespace App\Http\Controllers;
 use App\Models\Cotisation;
 use App\Models\CotisationMembre;
 use App\Models\User;
+use App\Models\UserNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class CotisationController extends Controller
 {
+    private function actorName(Request $request): string
+    {
+        return $request->user()?->name ?? 'Un administrateur';
+    }
+
+    private function notifyAllMembers(string $type, array $payload, ?int $excludeUserId = null): void
+    {
+        $recipients = User::query()
+            ->where('role', '!=', 'ADMIN')
+            ->when($excludeUserId, fn ($q) => $q->where('id', '!=', $excludeUserId))
+            ->pluck('id');
+
+        if ($recipients->isEmpty()) return;
+
+        $rows = $recipients->map(fn ($uid) => [
+            'user_id' => $uid,
+            'type' => $type,
+            'data' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            'read_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ])->all();
+
+        UserNotification::insert($rows);
+    }
+
+    private function notifyUser(int $userId, string $type, array $payload): void
+    {
+        UserNotification::create([
+            'user_id' => $userId,
+            'type' => $type,
+            'data' => $payload,
+            'read_at' => null,
+        ]);
+    }
     // ─── Helper format réponse simple (store/show/update) ────
     private function format(Cotisation $cotisation): array
     {
@@ -250,6 +286,16 @@ class CotisationController extends Controller
                 );
             }
 
+            // Notifications: chacun reçoit sa notification "nouvelle cotisation"
+            $payload = [
+                'message' => $this->actorName($request) . " a créé la cotisation « {$cotisation->nom} ».",
+                'cotisation_id' => $cotisation->id,
+                'nom' => $cotisation->nom,
+                'date_debut' => $cotisation->date_debut?->toDateString(),
+                'date_fin' => $cotisation->date_fin?->toDateString(),
+            ];
+            $this->notifyAllMembers('cotisation.created', $payload, $request->user()?->id);
+
             Log::info('Cotisation créée et assignée', [
                 'id'               => $cotisation->id,
                 'membres_assignes' => $membres->count(),
@@ -312,6 +358,7 @@ class CotisationController extends Controller
             'statut'         => 'sometimes|in:en_cours,terminee,en_attente,annulee',
         ]);
 
+        $oldNom = $cotisation->nom;
         $cotisation->update($request->only([
             'nom',
             'description',
@@ -329,6 +376,19 @@ class CotisationController extends Controller
 
             $cm->update(['montant_restant' => $montant]);
         }
+
+        // Notification globale "cotisation modifiée"
+        $actor = $this->actorName($request);
+        $titlePart = ($oldNom && $oldNom !== $cotisation->nom)
+            ? "a modifié la cotisation « {$oldNom} » en « {$cotisation->nom} »."
+            : "a modifié la cotisation « {$cotisation->nom} ».";
+        $payload = [
+            'message' => "{$actor} {$titlePart}",
+            'cotisation_id' => $cotisation->id,
+            'old_nom' => $oldNom,
+            'nom' => $cotisation->nom,
+        ];
+        $this->notifyAllMembers('cotisation.updated', $payload, $request->user()?->id);
 
         return response()->json([
             'success' => true,
@@ -348,7 +408,17 @@ class CotisationController extends Controller
             ], 404);
         }
 
+        $nom = $cotisation->nom;
+        $cotisationId = $cotisation->id;
         $cotisation->delete();
+
+        // Notification globale "cotisation supprimée"
+        $payload = [
+            'message' => "La cotisation « {$nom} » a été supprimée.",
+            'cotisation_id' => $cotisationId,
+            'nom' => $nom,
+        ];
+        $this->notifyAllMembers('cotisation.deleted', $payload);
 
         return response()->json([
             'success' => true,
@@ -407,10 +477,31 @@ class CotisationController extends Controller
             ], 404);
         }
 
+        $oldStatut = $cotisationMembre->statut;
         $cotisationMembre->update([
             'statut'          => $request->statut,
             'montant_restant' => $request->statut === 'reste' ? $request->montant_restant : 0,
         ]);
+
+        // Notification ciblée: seulement le membre concerné
+        $cot = Cotisation::find($cotisationId);
+        if ($cot) {
+            $labels = [
+                'paye' => 'payée',
+                'non_paye' => 'non payée',
+                'reste' => 'reste à payer',
+            ];
+            $newLabel = $labels[$request->statut] ?? $request->statut;
+            $payload = [
+                'message' => "Mise à jour: votre cotisation « {$cot->nom} » est maintenant {$newLabel}.",
+                'cotisation_id' => $cot->id,
+                'nom' => $cot->nom,
+                'old_statut' => $oldStatut,
+                'statut' => $request->statut,
+                'montant_restant' => $request->statut === 'reste' ? (float) ($request->montant_restant ?? 0) : 0,
+            ];
+            $this->notifyUser((int) $memberId, 'cotisation.member_status_updated', $payload);
+        }
 
         return response()->json([
             'success' => true,
@@ -432,7 +523,18 @@ class CotisationController extends Controller
             ], 404);
         }
 
+        $cot = Cotisation::find($cotisationId);
         $cotisationMembre->delete();
+
+        // Notification ciblée: seulement le membre
+        if ($cot) {
+            $payload = [
+                'message' => "La cotisation « {$cot->nom} » a été supprimée pour vous.",
+                'cotisation_id' => $cot->id,
+                'nom' => $cot->nom,
+            ];
+            $this->notifyUser((int) $memberId, 'cotisation.member_deleted', $payload);
+        }
 
         return response()->json([
             'success' => true,

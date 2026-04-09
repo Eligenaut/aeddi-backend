@@ -6,12 +6,56 @@ use App\Models\User;
 use App\Models\RolePermission;
 use App\Models\Cotisation;
 use App\Models\CotisationMembre;
+use App\Models\UserNotification;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 
 class MemberController extends Controller
 {
+    private function getSubRoleLabel(?string $subRole): string
+    {
+        if (!$subRole) return '';
+
+        $labels = [
+            'president' => 'Président',
+            'vice_president' => 'Vice Président',
+            'tresorier' => 'Trésorier(e)',
+            'vice_tresorier' => 'Vice Trésorier',
+            'commissaire_compte' => 'Commissaire au compte',
+            'commission_cercle_etude' => 'Commission (Cercle d\'étude)',
+            'commission_informatique' => 'Commission (Informatique)',
+            'commission_logement' => 'Commission (Logement)',
+            'commission_social' => 'Commission (Social)',
+            'commission_fete' => 'Commission (Fête)',
+            'commission_sport' => 'Commission (Sport)',
+            'commission_communication' => 'Commission (Communication)',
+            'commission_environnement' => 'Commission (Environnement)',
+        ];
+
+        return $labels[$subRole] ?? $subRole;
+    }
+
+    private function notifyAllMembers(string $type, array $payload, ?int $excludeUserId = null): void
+    {
+        $recipients = User::query()
+            ->where('role', '!=', 'ADMIN')
+            ->when($excludeUserId, fn ($q) => $q->where('id', '!=', $excludeUserId))
+            ->pluck('id');
+
+        if ($recipients->isEmpty()) return;
+
+        $rows = $recipients->map(fn ($uid) => [
+            'user_id' => $uid,
+            'type' => $type,
+            'data' => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            'read_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ])->all();
+
+        UserNotification::insert($rows);
+    }
     // ─── Helper upload image Cloudinary ──────────────────────
     private function uploadImageToCloudinary(string $imageData, string $publicId): string
     {
@@ -210,6 +254,34 @@ class MemberController extends Controller
             }
 
             $member->load('meta');
+
+            // Notification globale si changement de rôle / commission
+            if (isset($validated['role'])) {
+                $newRole = $validated['role'];
+                $newSubRoles = $newRole === 'BUREAU' ? ($validated['subRoles'] ?? []) : [];
+                $newSubRole = $newSubRoles[0] ?? null;
+                $oldRole    = $oldRole ?? null;
+                $oldSubRole = $oldSubRole ?? null;
+
+                if ($newRole !== $oldRole || $newSubRole !== $oldSubRole) {
+                    $memberName = $member->name ?? ($validated['prenom'] . ' ' . $validated['nom']);
+                    $newSubRoleLabel = $this->getSubRoleLabel($newSubRole);
+                    $rolePart = $newRole === 'BUREAU'
+                        ? ("a rejoint le bureau" . ($newSubRoleLabel ? " — {$newSubRoleLabel}" : ''))
+                        : ("a changé de rôle: {$newRole}");
+
+                    $payload = [
+                        'message' => "{$memberName} {$rolePart}.",
+                        'user_id' => $member->id,
+                        'name' => $memberName,
+                        'role' => $newRole,
+                        'sub_role' => $newSubRole,
+                        'sub_role_label' => $newSubRoleLabel,
+                    ];
+
+                    $this->notifyAllMembers('member.role_changed', $payload, null);
+                }
+            }
 
             return response()->json([
                 'success' => true,
