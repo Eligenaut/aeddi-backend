@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Activite;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Cache;
 use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 
 class ActiviteController extends Controller
@@ -134,6 +135,9 @@ class ActiviteController extends Controller
                 $activite->setMeta('galerie', $paths);
             }
 
+            // Invalidation cache "liste récente" pour le polling
+            Cache::forget('activites:latest:5');
+
             return response()->json([
                 'success' => true,
                 'message' => 'Activité créée avec succès',
@@ -162,6 +166,43 @@ class ActiviteController extends Controller
         return response()->json([
             'success' => true,
             'data'    => $this->format($activite),
+        ]);
+    }
+
+    public function latest(Request $request)
+    {
+        $afterId = (int) $request->query('after_id', 0);
+        $limit = (int) $request->query('limit', 5);
+        $limit = max(1, min($limit, 20));
+
+        // Si le client ne donne pas after_id, on renvoie une petite liste "dernières activités" via cache.
+        if ($afterId <= 0) {
+            $latest = Cache::remember('activites:latest:5', 10, function () {
+                return Activite::orderByDesc('id')->take(5)->get();
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $latest->map(fn($a) => $this->format($a)),
+                'meta' => [
+                    'max_id' => (int) ($latest->first()?->id ?? 0),
+                ],
+            ]);
+        }
+
+        // Sinon: on ne renvoie QUE les nouveautés (très rapide, pas de scan complet).
+        $news = Activite::where('id', '>', $afterId)
+            ->orderBy('id', 'asc')
+            ->take($limit)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $news->map(fn($a) => $this->format($a)),
+            'meta' => [
+                'max_id' => (int) ($news->last()?->id ?? $afterId),
+                'count' => $news->count(),
+            ],
         ]);
     }
 

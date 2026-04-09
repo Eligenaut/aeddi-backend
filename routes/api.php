@@ -51,6 +51,7 @@ Route::middleware('auth:sanctum')->prefix('cotisations')->group(function () {
 // Activités
 Route::middleware('auth:sanctum')->prefix('activites')->group(function () {
     Route::get('/', [ActiviteController::class, 'index'])->middleware('permission:show_activite');
+    Route::get('/latest', [ActiviteController::class, 'latest'])->middleware('permission:show_activite');
     Route::post('/', [ActiviteController::class, 'store'])->middleware('permission:create_activite');
     Route::get('/{id}', [ActiviteController::class, 'show'])->middleware('permission:show_activite');
     Route::put('/{id}', [ActiviteController::class, 'update'])->middleware('permission:edit_activite');
