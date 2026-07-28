@@ -199,7 +199,7 @@ class AuthController extends Controller
                 'etablissement' => $user->getMeta('etablissement') ?? '',
             ]));
 
-            return redirect('https://aeddi-antsiranana.vercel.app/auth/google/success?token=' . $token . '&user=' . $userData);
+            return redirect(env('FRONTEND_URL') . '/auth/google/success?token=' . $token . '&user=' . $userData);
         } catch (\Exception $e) {
             Log::error('Erreur Google OAuth', [
                 'message' => $e->getMessage(),
