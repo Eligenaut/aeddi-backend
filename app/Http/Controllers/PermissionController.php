@@ -45,7 +45,11 @@ class PermissionController extends Controller
         'show_parametre',
         'edit_parametre',
         'delete_parametre',
-        'create_parametre'
+        'create_parametre',
+        'show_tache',
+        'edit_tache',
+        'delete_tache',
+        'create_tache'
     ];
 
     // ✅ Permissions par défaut explicites
@@ -54,6 +58,7 @@ class PermissionController extends Controller
         'show_cotisation',
         'show_membre',
         'show_parametre',
+        'show_tache',
     ];
 
     // ✅ POST /permissions/add

@@ -10,6 +10,7 @@ class Permissions
         'show_cotisation', 'edit_cotisation',  'delete_cotisation', 'create_cotisation',
         'show_membre',     'edit_membre',      'delete_membre',     'create_membre',
         'show_parametre',  'edit_parametre',   'delete_parametre',  'create_parametre',
+        'show_tache',      'edit_tache',       'delete_tache',      'create_tache',
     ];
 
     // ── Permissions par défaut selon le rôle ────────────────────────────
@@ -28,6 +29,7 @@ class Permissions
             'show_cotisation',
             'show_membre',
             'show_parametre',
+            'show_tache',
         ],
     ];
 

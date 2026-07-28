@@ -5,23 +5,25 @@ use App\Http\Controllers\ActiviteController;
 use App\Http\Controllers\CotisationController;
 use App\Http\Controllers\AuthController;
 Route::get('/', function () {
-    return view('welcome');
+    return response()->json([
+        'name' => config('app.name'),
+        'version' => '1.0',
+    ]);
 });
 
 Route::get('auth/google',          [AuthController::class, 'redirectToGoogle']);
 Route::get('auth/google/callback', [AuthController::class, 'handleGoogleCallback']);
 
-// Pages statiques pour le SEO
 Route::get('/about', function () {
-    return view('pages.about');
+    return response()->json(['message' => 'À propos d\'AEDDI']);
 });
 
 Route::get('/contact', function () {
-    return view('pages.contact');
+    return response()->json(['message' => 'Contact AEDDI']);
 });
 
 Route::get('/activities', function () {
-    return view('pages.activities');
+    return response()->json(['message' => 'Activités AEDDI']);
 });
 
 // Route pour le sitemap

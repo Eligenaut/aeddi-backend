@@ -10,6 +10,8 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\AccueilController;
 use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\TacheController;
+use App\Http\Controllers\DataRegisterController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
@@ -60,6 +62,65 @@ Route::middleware('auth:sanctum')->prefix('activites')->group(function () {
     Route::delete('/{id}/galerie/{index}', [ActiviteController::class, 'deleteGalerieImage'])->middleware('permission:edit_activite');
 });
 
+
+// Tâches
+Route::middleware('auth:sanctum')->prefix('taches')->group(function () {
+    Route::get('/', [TacheController::class, 'index'])->middleware('permission:show_tache');
+    Route::get('/mes-taches', [TacheController::class, 'myTasks'])->middleware('permission:show_tache');
+    Route::post('/', [TacheController::class, 'store'])->middleware('permission:create_tache');
+    Route::get('/{id}', [TacheController::class, 'show'])->middleware('permission:show_tache');
+    Route::put('/{id}', [TacheController::class, 'update'])->middleware('permission:edit_tache');
+    Route::delete('/{id}', [TacheController::class, 'destroy'])->middleware('permission:delete_tache');
+});
+
+// Data Register (public - for registration forms)
+Route::prefix('data-register')->group(function () {
+    Route::get('/', [DataRegisterController::class, 'getAll']);
+    Route::get('/etablissements', [DataRegisterController::class, 'getEtablissements']);
+    Route::get('/promotions', [DataRegisterController::class, 'getPromotions']);
+    Route::get('/types-logement', [DataRegisterController::class, 'getTypesLogement']);
+    Route::get('/quartiers', [DataRegisterController::class, 'getQuartiers']);
+});
+
+// Data Register Admin (CRUD - requires edit_membre or similar permission)
+Route::middleware('auth:sanctum')->prefix('admin/data-register')->group(function () {
+    // Établissements
+    Route::post('/etablissements', [DataRegisterController::class, 'storeEtablissement'])->middleware('permission:create_membre');
+    Route::put('/etablissements/{id}', [DataRegisterController::class, 'updateEtablissement'])->middleware('permission:edit_membre');
+    Route::delete('/etablissements/{id}', [DataRegisterController::class, 'deleteEtablissement'])->middleware('permission:delete_membre');
+    // Parcours
+    Route::post('/parcours', [DataRegisterController::class, 'storeParcours'])->middleware('permission:create_membre');
+    Route::put('/parcours/{id}', [DataRegisterController::class, 'updateParcours'])->middleware('permission:edit_membre');
+    Route::delete('/parcours/{id}', [DataRegisterController::class, 'deleteParcours'])->middleware('permission:delete_membre');
+    // Niveaux
+    Route::post('/niveaux', [DataRegisterController::class, 'storeNiveau'])->middleware('permission:create_membre');
+    Route::put('/niveaux/{id}', [DataRegisterController::class, 'updateNiveau'])->middleware('permission:edit_membre');
+    Route::delete('/niveaux/{id}', [DataRegisterController::class, 'deleteNiveau'])->middleware('permission:delete_membre');
+    // Promotions
+    Route::post('/promotions', [DataRegisterController::class, 'storePromotion'])->middleware('permission:create_membre');
+    Route::put('/promotions/{id}', [DataRegisterController::class, 'updatePromotion'])->middleware('permission:edit_membre');
+    Route::delete('/promotions/{id}', [DataRegisterController::class, 'deletePromotion'])->middleware('permission:delete_membre');
+    // Types de logement
+    Route::post('/types-logement', [DataRegisterController::class, 'storeTypeLogement'])->middleware('permission:create_membre');
+    Route::put('/types-logement/{id}', [DataRegisterController::class, 'updateTypeLogement'])->middleware('permission:edit_membre');
+    Route::delete('/types-logement/{id}', [DataRegisterController::class, 'deleteTypeLogement'])->middleware('permission:delete_membre');
+    // Options Campus
+    Route::post('/options-campus', [DataRegisterController::class, 'storeOptionCampus'])->middleware('permission:create_membre');
+    Route::put('/options-campus/{id}', [DataRegisterController::class, 'updateOptionCampus'])->middleware('permission:edit_membre');
+    Route::delete('/options-campus/{id}', [DataRegisterController::class, 'deleteOptionCampus'])->middleware('permission:delete_membre');
+    // Sections Campus
+    Route::post('/sections-campus', [DataRegisterController::class, 'storeSectionCampus'])->middleware('permission:create_membre');
+    Route::put('/sections-campus/{id}', [DataRegisterController::class, 'updateSectionCampus'])->middleware('permission:edit_membre');
+    Route::delete('/sections-campus/{id}', [DataRegisterController::class, 'deleteSectionCampus'])->middleware('permission:delete_membre');
+    // Blocs Campus
+    Route::post('/blocs-campus', [DataRegisterController::class, 'storeBlocCampus'])->middleware('permission:create_membre');
+    Route::put('/blocs-campus/{id}', [DataRegisterController::class, 'updateBlocCampus'])->middleware('permission:edit_membre');
+    Route::delete('/blocs-campus/{id}', [DataRegisterController::class, 'deleteBlocCampus'])->middleware('permission:delete_membre');
+    // Quartiers
+    Route::post('/quartiers', [DataRegisterController::class, 'storeQuartier'])->middleware('permission:create_membre');
+    Route::put('/quartiers/{id}', [DataRegisterController::class, 'updateQuartier'])->middleware('permission:edit_membre');
+    Route::delete('/quartiers/{id}', [DataRegisterController::class, 'deleteQuartier'])->middleware('permission:delete_membre');
+});
 
 Route::middleware('auth:sanctum')->get('/dashboard-stats', [MemberController::class, 'dashboardStats']);
 
