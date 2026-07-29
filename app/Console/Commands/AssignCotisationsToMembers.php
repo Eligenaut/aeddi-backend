@@ -31,7 +31,7 @@ class AssignCotisationsToMembers extends Command
         $this->info('Association des cotisations actives aux membres...');
 
         // Récupérer tous les membres (sauf admin)
-        $members = User::where('email', '!=', 'admin@aeddi.com')->get();
+        $members = User::where('email', '!=', env('ADMIN_EMAIL', 'admin@aeddi.com'))->get();
         $this->info("Nombre de membres trouvés: {$members->count()}");
 
         // Récupérer toutes les cotisations non terminées/annulées

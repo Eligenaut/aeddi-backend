@@ -8,6 +8,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\CotisationMembre;
+use App\Models\UserLogement;
 
 class User extends Authenticatable
 {
@@ -43,7 +44,7 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return strtoupper($this->role) === 'ADMIN'
-            && $this->email === 'admin@aeddi.com';
+            && $this->email === env('ADMIN_EMAIL', 'admin@aeddi.com');
     }
 
     // Relation user_meta
@@ -73,5 +74,10 @@ class User extends Authenticatable
     public function cotisationMembres(): HasMany
     {
         return $this->hasMany(CotisationMembre::class);
+    }
+
+    public function logements(): HasMany
+    {
+        return $this->hasMany(UserLogement::class);
     }
 }

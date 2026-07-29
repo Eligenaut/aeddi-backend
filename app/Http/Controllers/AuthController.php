@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\UserLogement;
 use App\Models\AuthorizedEmail;
 use App\Models\RolePermission;
 use Illuminate\Http\Request;
@@ -251,21 +252,23 @@ class AuthController extends Controller
     public function register(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email'         => 'required|email|max:255',
-            'nom'           => 'required|string|max:100',
-            'prenom'        => 'required|string|max:100',
-            'etablissement' => 'required|string|max:255',
-            'parcours'      => 'required|string|max:255',
-            'niveau'        => 'required|string|max:50',
-            'promotion'     => 'required|string|max:50',
-            'logement'      => 'required|string|max:50',
-            'telephone'     => 'required|string|max:20',
-            'url_frontend'  => 'required|url',
-            'image'         => 'nullable|string',
-            'imageName'     => 'nullable|string',
-            'imageType'     => 'nullable|string',
-            'blocCampus'    => 'nullable|string|max:100',
-            'quartier'      => 'nullable|string|max:100',
+            'email'           => 'required|email|max:255',
+            'nom'             => 'required|string|max:100',
+            'prenom'          => 'required|string|max:100',
+            'etablissement'   => 'required|string|max:255',
+            'parcours'        => 'required|string|max:255',
+            'niveau'          => 'required|string|max:50',
+            'promotion'       => 'required|string|max:50',
+            'telephone'       => 'required|string|max:20',
+            'url_frontend'    => 'required|url',
+            'image'           => 'nullable|string',
+            'imageName'       => 'nullable|string',
+            'imageType'       => 'nullable|string',
+            'type_logement'   => 'nullable|string|max:50',
+            'option_campus'   => 'nullable|string|max:255',
+            'section_campus'  => 'nullable|string|max:255',
+            'bloc_campus'     => 'nullable|string|max:255',
+            'quartier'        => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -313,9 +316,6 @@ class AuthController extends Controller
                 'parcours'      => $request->input('parcours'),
                 'niveau'        => $request->input('niveau'),
                 'promotion'     => $request->input('promotion'),
-                'logement'      => $request->input('logement'),
-                'bloc_campus'   => $request->input('blocCampus'),
-                'quartier'      => $request->input('quartier'),
                 'telephone'     => $request->input('telephone'),
             ];
 
@@ -328,6 +328,25 @@ class AuthController extends Controller
             $rolePermissions = RolePermission::findPermissions($authorized->role, null);
             if (!empty($rolePermissions)) {
                 $user->setMeta('permissions', json_encode($rolePermissions));
+            }
+
+            if ($request->filled('type_logement') && $request->filled('option_campus')) {
+                UserLogement::create([
+                    'user_id'          => $user->id,
+                    'type_logement_id' => $request->input('type_logement'),
+                    'option_campus_id' => $request->input('option_campus'),
+                    'section_campus_id' => $request->input('section_campus'),
+                    'bloc_campus_id'   => $request->input('bloc_campus'),
+                ]);
+            }
+
+            if ($request->filled('quartier')) {
+                $typeVille = \App\Models\TypeLogement::where('nom', 'Ville')->orWhere('nom', 'ville')->first();
+                UserLogement::create([
+                    'user_id'          => $user->id,
+                    'type_logement_id' => $typeVille?->id,
+                    'quartier_id'      => $request->input('quartier'),
+                ]);
             }
 
             if ($request->has('image') && !empty($request->input('image'))) {

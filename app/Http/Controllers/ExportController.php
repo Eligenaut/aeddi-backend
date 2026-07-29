@@ -54,7 +54,7 @@ class ExportController extends Controller
             'email_verified_at',
             'created_at',
             'updated_at'
-        ])->where('email', '!=', 'admin@aeddi.com')->get();
+        ])->where('email', '!=', env('ADMIN_EMAIL', 'admin@aeddi.com'))->get();
 
         // Préparer les données pour l'export
         $csvData = [];
@@ -167,7 +167,7 @@ class ExportController extends Controller
             'email_verified_at',
             'created_at',
             'updated_at'
-        ])->where('email', '!=', 'admin@aeddi.com')->get();
+        ])->where('email', '!=', env('ADMIN_EMAIL', 'admin@aeddi.com'))->get();
 
         // Préparer les données pour l'export
         $data = [];
