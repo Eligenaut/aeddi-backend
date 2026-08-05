@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
-use App\Models\UserMeta;
 use App\Models\RolePermission;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -52,15 +50,6 @@ class PermissionController extends Controller
         'create_tache'
     ];
 
-    // ✅ Permissions par défaut explicites
-    private const DEFAULT_PERMISSIONS = [
-        'show_activite',
-        'show_cotisation',
-        'show_membre',
-        'show_parametre',
-        'show_tache',
-    ];
-
     // ✅ POST /permissions/add
     public function addPermission(Request $request): JsonResponse
     {
@@ -91,28 +80,13 @@ class PermissionController extends Controller
                 ['permissions' => $permissions]
             );
 
-            // ✅ Appliquer aux utilisateurs concernés
-            if ($role === 'MEMBER' || $role === 'NOVICE') {
-                $users = User::where('role', $role)->get();
-            } else {
-                $users = User::where('role', $role)
-                    ->whereJsonContains('sub_role', $subRole)
-                    ->get();
-            }
-
-            foreach ($users as $user) {
-                /** @var User $user */
-                $user->setMeta('permissions', json_encode($permissions));
-            }
-
             return response()->json([
                 'success' => true,
-                'message' => 'Permissions définies et appliquées avec succès',
+                'message' => 'Permissions définies avec succès',
                 'data' => [
-                    'role'          => $role,
-                    'subRole'       => $subRole,
-                    'permissions'   => $permissions,
-                    'users_updated' => $users->count(),
+                    'role'        => $role,
+                    'subRole'     => $subRole,
+                    'permissions' => $permissions,
                 ]
             ], 200);
         } catch (\Exception $e) {
@@ -145,28 +119,19 @@ class PermissionController extends Controller
             $role      = $validated['role'];
             $subRole   = $validated['subRole'] ?? null;
 
-            // ✅ Permissions par défaut
-            $defaultPermissions = self::DEFAULT_PERMISSIONS;
+            // ✅ Permissions de base du rôle (source unique : Permissions::DEFAULTS)
+            // Le Président du Bureau a toutes les permissions (comme l'admin)
+            if (strtoupper($role) === 'BUREAU' && strtoupper((string) $subRole) === 'PRESIDENT') {
+                $defaultPermissions = \App\Helpers\Permissions::ALL;
+            } else {
+                $defaultPermissions = \App\Helpers\Permissions::DEFAULTS[$role] ?? [];
+            }
 
             // ✅ Sauvegarder dans role_permissions
             RolePermission::updateOrCreate(
                 ['role' => $role, 'sub_role' => $subRole],
                 ['permissions' => $defaultPermissions]
             );
-
-            // ✅ Appliquer aux utilisateurs concernés
-            if ($role === 'MEMBER' || $role === 'NOVICE') {
-                $users = User::where('role', $role)->get();
-            } else {
-                $users = User::where('role', $role)
-                    ->whereJsonContains('sub_role', $subRole)
-                    ->get();
-            }
-
-            foreach ($users as $user) {
-                /** @var User $user */
-                $user->setMeta('permissions', json_encode($defaultPermissions));
-            }
 
             return response()->json([
                 'success' => true,
@@ -202,115 +167,29 @@ class PermissionController extends Controller
                 ], 422);
             }
 
-            $permissions = RolePermission::findPermissions($role, $subRole ?? null);
+            $permissions = [];
+            $role        = strtoupper($role);
+
+            // Permissions effectives : ligne exacte (rôle + sous-rôle) puis ligne générique (rôle seul)
+            if (!empty($subRole)) {
+                $permissions = RolePermission::findPermissions($role, $subRole);
+            }
+            if (empty($permissions)) {
+                $permissions = RolePermission::findPermissions($role, null);
+            }
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'role'        => $role,
                     'subRole'     => $subRole ?? null,
-                    'permissions' => $permissions ?? [],
-                ]
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur serveur',
-                'error'   => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    // ✅ GET /permissions/{userId}
-    public function getPermissions($userId): JsonResponse
-    {
-        try {
-            $user = User::find($userId);
-
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Utilisateur non trouvé'
-                ], 404);
-            }
-
-            $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
-
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'user_id'     => $userId,
-                    'role'        => $user->role,
-                    'subRoles'    => json_decode($user->sub_role) ?? [],
                     'permissions' => $permissions,
                 ]
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Erreur lors de la récupération des permissions',
-                'error'   => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    // ✅ DELETE /permissions/{userId}
-    public function deletePermissions($userId): JsonResponse
-    {
-        try {
-            $user = User::find($userId);
-
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Utilisateur non trouvé'
-                ], 404);
-            }
-
-            UserMeta::where('user_id', $userId)
-                ->where('meta_key', 'permissions')
-                ->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Permissions supprimées avec succès',
-                'user_id' => $userId
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de la suppression des permissions',
-                'error'   => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    // ✅ GET /permissions/{userId}/has/{permission}
-    public function hasPermission($userId, $permission): JsonResponse
-    {
-        try {
-            $user = User::find($userId);
-
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Utilisateur non trouvé'
-                ], 404);
-            }
-
-            $permissions   = json_decode($user->getMeta('permissions'), true) ?? [];
-            $hasPermission = in_array($permission, $permissions);
-
-            return response()->json([
-                'success'       => true,
-                'hasPermission' => $hasPermission,
-                'permission'    => $permission,
-                'user_id'       => $userId
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de la vérification de la permission',
+                'message' => 'Erreur serveur',
                 'error'   => $e->getMessage()
             ], 500);
         }

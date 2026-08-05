@@ -40,11 +40,17 @@ class User extends Authenticatable
         ];
     }
 
+    // L'accessor sert l'URL complète à la lecture tout en gardant un chemin
+    // relatif en base (ou une URL distante Google/Cloudinary existante).
+    public function getAvatarAttribute(?string $value): ?string
+    {
+        return \App\Helpers\ImageStorage::url($value);
+    }
+
     //Vérifier si l'utilisateur est admin
     public function isAdmin(): bool
     {
-        return strtoupper($this->role) === 'ADMIN'
-            && $this->email === env('ADMIN_EMAIL', 'admin@aeddi.com');
+        return strtoupper($this->role ?? '') === 'ADMIN';
     }
 
     // Relation user_meta

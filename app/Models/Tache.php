@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Tache extends Model
@@ -15,7 +16,6 @@ class Tache extends Model
         'description',
         'date_debut',
         'assigned_by',
-        'assigned_to',
         'statut',
         'priorite',
         'date_echeance',
@@ -31,8 +31,8 @@ class Tache extends Model
         return $this->belongsTo(User::class, 'assigned_by');
     }
 
-    public function assignedTo(): BelongsTo
+    public function assignedTo(): BelongsToMany
     {
-        return $this->belongsTo(User::class, 'assigned_to');
+        return $this->belongsToMany(User::class, 'tache_user');
     }
 }

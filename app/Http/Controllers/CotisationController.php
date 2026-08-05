@@ -78,9 +78,9 @@ class CotisationController extends Controller
             }
 
             // ════════════════════════════════════════════════
-            // ADMIN
+            // ADMIN / BUREAU : vue de gestion complète
             // ════════════════════════════════════════════════
-            if (strtoupper($user->role) === 'ADMIN') {
+            if (in_array(strtoupper($user->role), ['ADMIN', 'BUREAU'])) {
                 $cotisations = Cotisation::withCount([
                     'cotisationMembres as total_membres',
                     'cotisationMembres as membres_payes'     => fn($q) => $q->where('statut', 'paye'),
@@ -186,10 +186,6 @@ class CotisationController extends Controller
             $data = $cotisationsMembre->map(function ($cm) use ($user) {
                 $c = $cm->cotisation;
 
-                $total_membres     = CotisationMembre::where('cotisation_id', $c->id)->count();
-                $membres_payes     = CotisationMembre::where('cotisation_id', $c->id)->where('statut', 'paye')->count();
-                $membres_non_payes = CotisationMembre::where('cotisation_id', $c->id)->whereIn('statut', ['non_paye', 'reste'])->count();
-
                 $montant = $user->role === 'NOVICE'
                     ? $c->montant_novice
                     : $c->montant_ancien;
@@ -206,9 +202,6 @@ class CotisationController extends Controller
                         'date_fin'          => $c->date_fin->toDateString(),
                         'statut'            => $c->statut,
                         'created_at'        => $c->created_at,
-                        'total_membres'     => $total_membres,
-                        'membres_payes'     => $membres_payes,
-                        'membres_non_payes' => $membres_non_payes,
                     ],
                     'statut'          => $cm->statut,
                     'montant_restant' => $cm->montant_restant,

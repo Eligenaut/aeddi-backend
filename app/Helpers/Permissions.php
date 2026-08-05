@@ -2,6 +2,9 @@
 
 namespace App\Helpers;
 
+use App\Models\RolePermission;
+use App\Models\User;
+
 class Permissions
 {
     // ── Toutes les permissions disponibles ──────────────────────────────
@@ -13,11 +16,12 @@ class Permissions
         'show_tache',      'edit_tache',       'delete_tache',      'create_tache',
     ];
 
-    // ── Permissions par défaut selon le rôle ────────────────────────────
+    // ── Permissions de base par rôle (utilisées pour le seed / le reset) ──
     const DEFAULTS = [
         'NOVICE' => [
             'show_activite',
             'show_cotisation',
+            'show_membre',
         ],
         'MEMBER' => [
             'show_activite',
@@ -33,14 +37,59 @@ class Permissions
         ],
     ];
 
-    // ── Vérifier si un user a une permission ────────────────────────────
-    public static function userHas(\App\Models\User $user, string $permission): bool
+    // ── Permissions effectives d'un utilisateur ─────────────────────────
+    // Source de vérité unique : table role_permissions.
+    // Aucun fallback : un utilisateur n'a que ce qui est explicitement
+    // configuré pour son rôle (+ sub_role). Pas de configuration = accès
+    // refusé. Seul l'admin a tout.
+    public static function resolve(User $user): array
     {
-        // Admin = tout autorisé
-        if ($user->isAdmin()) return true;
+        if ($user->isAdmin()) {
+            return self::ALL;
+        }
 
-        $permissions = json_decode($user->getMeta('permissions'), true) ?? [];
-        return in_array($permission, $permissions);
+        $role = strtoupper((string) $user->role);
+        $subRole = self::firstSubRole($user->sub_role);
+
+        // Le Président du Bureau a toutes les permissions (comme l'admin)
+        if ($subRole === 'PRESIDENT') {
+            return self::ALL;
+        }
+
+        // 1) configuration exacte (rôle + sous-rôle)
+        if ($subRole !== null) {
+            $custom = RolePermission::findPermissions($role, $subRole);
+            if (!empty($custom)) {
+                return $custom;
+            }
+        }
+
+        // 2) configuration générique (rôle seul)
+        return RolePermission::findPermissions($role, null);
+    }
+
+    // ── Vérifier si un user a une permission ────────────────────────────
+    public static function userHas(User $user, string $permission): bool
+    {
+        return in_array($permission, self::resolve($user));
+    }
+
+    // ── Premier sous-rôle (le champ sub_role est un JSON encodé) ────────
+    public static function firstSubRole(mixed $subRole): ?string
+    {
+        if (is_string($subRole)) {
+            $decoded = json_decode($subRole, true);
+            if (is_array($decoded)) {
+                $subRole = $decoded;
+            }
+        }
+
+        if (is_array($subRole) && count($subRole) > 0) {
+            $first = reset($subRole);
+            return is_string($first) && $first !== '' ? $first : null;
+        }
+
+        return null;
     }
 
     // ── Retourner une réponse JSON "refusé" ─────────────────────────────

@@ -346,25 +346,7 @@ class ExportController extends Controller
      */
     private function canExportUsers($user)
     {
-        if (!$user) return false;
-        
-        // Admin peut toujours exporter
-        if ($user->role === 'admin') return true;
-        
-        // Membres de bureau avec rôles spécifiques
-        if ($user->role === 'bureau') {
-            $allowedSubRoles = [
-                'president',
-                'vice_president',
-                'tresorier',
-                'vice_tresorier',
-                'commissaire_compte'
-            ];
-            
-            return in_array($user->sub_role, $allowedSubRoles);
-        }
-        
-        return false;
+        return \App\Helpers\Permissions::userHas($user, 'show_membre');
     }
 
     /**

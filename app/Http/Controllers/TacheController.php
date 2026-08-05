@@ -18,7 +18,7 @@ class TacheController extends Controller
             'description'  => $tache->description,
             'date_debut'   => $tache->date_debut?->toDateString(),
             'assigned_by'  => $tache->assignedBy?->only(['id', 'name', 'avatar', 'sub_role']),
-            'assigned_to'  => $tache->assignedTo?->only(['id', 'name', 'avatar', 'sub_role']),
+            'assigned_to'  => $tache->assignedTo->map(fn($u) => $u->only(['id', 'name', 'avatar', 'sub_role']))->values(),
             'statut'       => $tache->statut,
             'priorite'     => $tache->priorite,
             'date_echeance'=> $tache->date_echeance?->toDateString(),
@@ -40,11 +40,13 @@ class TacheController extends Controller
             'date_echeance' => $tache->date_echeance?->toDateString(),
         ];
 
-        UserNotification::create([
-            'user_id' => $tache->assigned_to,
-            'type' => 'tache.created',
-            'data' => $payload,
-        ]);
+        foreach ($tache->assignedTo as $assignedUser) {
+            UserNotification::create([
+                'user_id' => $assignedUser->id,
+                'type' => 'tache.created',
+                'data' => $payload,
+            ]);
+        }
     }
 
     public function index(Request $request)
@@ -60,7 +62,7 @@ class TacheController extends Controller
         }
 
         if ($request->filled('assigned_to')) {
-            $query->where('assigned_to', $request->assigned_to);
+            $query->whereHas('assignedTo', fn($q) => $q->where('user_id', $request->assigned_to));
         }
 
         $taches = $query->get();
@@ -76,7 +78,7 @@ class TacheController extends Controller
         $user = $request->user();
 
         $query = Tache::with(['assignedBy', 'assignedTo'])
-            ->where('assigned_to', $user->id)
+            ->whereHas('assignedTo', fn($q) => $q->where('user_id', $user->id))
             ->orderBy('created_at', 'desc');
 
         if ($request->filled('statut')) {
@@ -97,7 +99,8 @@ class TacheController extends Controller
             'titre'        => 'required|string|max:255',
             'description'  => 'nullable|string',
             'date_debut'   => 'nullable|date',
-            'assigned_to'  => 'required|exists:users,id',
+            'assigned_to'  => 'required|array',
+            'assigned_to.*' => 'exists:users,id',
             'priorite'     => 'required|in:basse,moyenne,haute,urgente',
             'date_echeance'=> 'nullable|date',
             'statut'       => 'nullable|in:en_attente,en_cours,terminee,annulee',
@@ -117,12 +120,12 @@ class TacheController extends Controller
                 'description'  => $request->description,
                 'date_debut'   => $request->date_debut,
                 'assigned_by'  => $request->user()->id,
-                'assigned_to'  => $request->assigned_to,
                 'priorite'     => $request->priorite,
                 'date_echeance'=> $request->date_echeance,
                 'statut'       => $request->statut ?? 'en_attente',
             ]);
 
+            $tache->assignedTo()->sync($request->assigned_to);
             $tache->load(['assignedBy', 'assignedTo']);
 
             $this->notifyTacheCreated($request, $tache);
@@ -173,7 +176,8 @@ class TacheController extends Controller
             'titre'        => 'sometimes|string|max:255',
             'description'  => 'nullable|string',
             'date_debut'   => 'nullable|date',
-            'assigned_to'  => 'sometimes|exists:users,id',
+            'assigned_to'  => 'sometimes|array',
+            'assigned_to.*' => 'exists:users,id',
             'priorite'     => 'sometimes|in:basse,moyenne,haute,urgente',
             'date_echeance'=> 'nullable|date',
             'statut'       => 'sometimes|in:en_attente,en_cours,terminee,annulee',
@@ -192,11 +196,14 @@ class TacheController extends Controller
                 'titre',
                 'description',
                 'date_debut',
-                'assigned_to',
                 'priorite',
                 'date_echeance',
                 'statut',
             ]));
+
+            if ($request->has('assigned_to')) {
+                $tache->assignedTo()->sync($request->assigned_to);
+            }
 
             $tache->load(['assignedBy', 'assignedTo']);
 

@@ -39,37 +39,6 @@ class NotificationController extends Controller
         ]);
     }
 
-    public function poll(Request $request)
-    {
-        $user = $request->user();
-        $afterId = (int) $request->query('after_id', 0);
-        $limit = (int) $request->query('limit', 20);
-        $limit = max(1, min($limit, 50));
-
-        $newItems = UserNotification::query()
-            ->where('user_id', $user->id)
-            ->whereNull('deleted_at')
-            ->when($afterId > 0, fn ($q) => $q->where('id', '>', $afterId))
-            ->orderBy('id', 'asc')
-            ->take($limit)
-            ->get();
-
-        $unreadCount = UserNotification::query()
-            ->where('user_id', $user->id)
-            ->whereNull('deleted_at')
-            ->whereNull('read_at')
-            ->count();
-
-        return response()->json([
-            'success' => true,
-            'data' => $newItems,
-            'meta' => [
-                'unread_count' => $unreadCount,
-                'max_id' => (int) ($newItems->last()?->id ?? $afterId),
-            ],
-        ]);
-    }
-
     public function markRead(Request $request, int $id)
     {
         $user = $request->user();

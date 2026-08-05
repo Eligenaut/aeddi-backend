@@ -3,10 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\RolePermission;
+use App\Models\AuthorizedEmail;
 use App\Models\Cotisation;
 use App\Models\CotisationMembre;
 use App\Models\UserNotification;
+use App\Models\Activite;
+use App\Models\Etablissement;
+use App\Models\Parcours;
+use App\Models\Niveau;
+use App\Models\Promotion;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -36,6 +41,28 @@ class MemberController extends Controller
         return $labels[$subRole] ?? $subRole;
     }
 
+    // ─── Recalibrer les montants de cotisation selon le rôle ──
+    private function recalibrateCotisationAmounts(User $member, string $role): void
+    {
+        $rows = CotisationMembre::where('user_id', $member->id)->get();
+
+        foreach ($rows as $cm) {
+            // Une cotisation déjà payée ne change pas
+            if ($cm->statut === 'paye') continue;
+
+            $cotisation = $cm->cotisation;
+            if (!$cotisation) continue;
+
+            $montant = $role === 'NOVICE'
+                ? $cotisation->montant_novice
+                : $cotisation->montant_ancien;
+
+            if ($montant === null) continue;
+
+            $cm->update(['montant_restant' => (float) $montant]);
+        }
+    }
+
     private function notifyAllMembers(string $type, array $payload, ?int $excludeUserId = null): void
     {
         $recipients = User::query()
@@ -56,31 +83,10 @@ class MemberController extends Controller
 
         UserNotification::insert($rows);
     }
-    // ─── Helper upload image Cloudinary ──────────────────────
-    private function uploadImageToCloudinary(string $imageData, string $publicId): string
+    // ─── Helper upload image locale (WebP) ────────────────────
+    private function uploadAvatarLocal(string $imageData, string $publicId): string
     {
-        \Cloudinary\Configuration\Configuration::instance([
-            'cloud' => [
-                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-                'api_key'    => env('CLOUDINARY_API_KEY'),
-                'api_secret' => env('CLOUDINARY_API_SECRET'),
-            ],
-            'url' => ['secure' => true],
-        ]);
-
-        $tmpFile = tempnam(sys_get_temp_dir(), 'profile_');
-        file_put_contents($tmpFile, $imageData);
-
-        $api = new \Cloudinary\Api\Upload\UploadApi();
-        $result = $api->upload($tmpFile, [
-            'folder'    => 'aeddi/membres',
-            'public_id' => $publicId,
-            'overwrite' => true,
-        ]);
-
-        unlink($tmpFile);
-
-        return $result['secure_url'];
+        return \App\Helpers\ImageStorage::storeFromBase64($imageData, 'membres');
     }
 
     // ─── Helper avatar URL ───────────────────────────────────
@@ -104,6 +110,67 @@ class MemberController extends Controller
             'payees' => $cotisations->where('statut', 'paye')->count(),
         ];
 
+        $rawEtablissement = $member->getMeta('etablissement') ?? '';
+        $rawParcours = $member->getMeta('parcours') ?? '';
+        $rawNiveau = $member->getMeta('niveau') ?? '';
+        $rawPromotion = $member->getMeta('promotion') ?? '';
+
+        $etablissement = $rawEtablissement;
+        if (is_numeric($rawEtablissement)) {
+            $etab = Etablissement::find((int)$rawEtablissement);
+            $etablissement = $etab?->nom ?? $rawEtablissement;
+        }
+
+        $parcours = $rawParcours;
+        if (is_numeric($rawParcours)) {
+            $p = Parcours::find((int)$rawParcours);
+            $parcours = $p?->nom ?? $rawParcours;
+        }
+
+        $niveau = $rawNiveau;
+        if (is_numeric($rawNiveau)) {
+            $n = Niveau::find((int)$rawNiveau);
+            $niveau = $n?->nom ?? $rawNiveau;
+        }
+
+        $promotion = $rawPromotion;
+        if (is_numeric($rawPromotion)) {
+            $prom = Promotion::find((int)$rawPromotion);
+            $promotion = $prom?->nom ?? $rawPromotion;
+        }
+
+        $logement       = $member->getMeta('logement')    ?? '';
+        $blocCampus     = $member->getMeta('bloc_campus') ?? '';
+        $quartier       = $member->getMeta('quartier')    ?? '';
+        $optionCampus   = '';
+        $sectionCampus  = '';
+
+        if (empty($logement) && empty($blocCampus) && empty($quartier)) {
+            $userLogement = \App\Models\UserLogement::where('user_id', $member->id)->first();
+            if ($userLogement) {
+                $typeLog = \App\Models\TypeLogement::find($userLogement->type_logement_id);
+                if ($typeLog) {
+                    $logement = strtolower($typeLog->nom) === 'ville' ? 'ville' : 'campus';
+                }
+                if ($userLogement->option_campus_id) {
+                    $opt = \App\Models\OptionCampus::find($userLogement->option_campus_id);
+                    $optionCampus = $opt?->nom ?? '';
+                }
+                if ($userLogement->section_campus_id) {
+                    $sec = \App\Models\SectionCampus::find($userLogement->section_campus_id);
+                    $sectionCampus = $sec?->nom ?? '';
+                }
+                if ($userLogement->bloc_campus_id) {
+                    $bloc = \App\Models\BlocCampus::find($userLogement->bloc_campus_id);
+                    $blocCampus = $bloc?->nom ?? '';
+                }
+                if ($userLogement->quartier_id) {
+                    $q = \App\Models\Quartier::find($userLogement->quartier_id);
+                    $quartier = $q?->nom ?? '';
+                }
+            }
+        }
+
         return [
             'id'               => $member->id,
             'name'             => $member->name ?? '',
@@ -113,13 +180,15 @@ class MemberController extends Controller
             'avatar'           => $this->getAvatarUrl($member),
             'role'             => strtoupper($member->role ?? 'MEMBER'),
             'sub_role'         => json_decode($member->sub_role ?? '[]') ?? [],
-            'etablissement'    => $member->getMeta('etablissement') ?? '',
-            'parcours'         => $member->getMeta('parcours') ?? '',
-            'niveau'           => $member->getMeta('niveau') ?? '',
-            'promotion'        => $member->getMeta('promotion') ?? '',
-            'logement'         => $member->getMeta('logement') ?? '',
-            'bloc_campus'      => $member->getMeta('bloc_campus') ?? '',
-            'quartier'         => $member->getMeta('quartier') ?? '',
+            'etablissement'    => $etablissement,
+            'parcours'         => $parcours,
+            'niveau'           => $niveau,
+            'promotion'        => $promotion,
+            'logement'         => $logement,
+            'bloc_campus'      => $blocCampus,
+            'option_campus'    => $optionCampus,
+            'section_campus'   => $sectionCampus,
+            'quartier'         => $quartier,
             'telephone'        => $member->getMeta('telephone') ?? '',
             'statut'           => $member->email_verified_at ? 'actif' : 'en_attente',
             'cotisation_stats' => $cotisationStats,
@@ -129,6 +198,80 @@ class MemberController extends Controller
     }
 
     // ─── Liste tous les membres ─────────────────────────────
+    // ─── Statistiques du tableau de bord ──────────────────────
+    public function dashboardStats(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user('sanctum');
+
+            $bureau  = User::where('role', 'BUREAU')->count();
+            $membres = User::where('role', 'MEMBER')->count();
+            $total   = User::where('role', '!=', 'ADMIN')->count();
+
+            $totalActivites     = Activite::count();
+            $activitesEnCours   = Activite::where('statut', 'en_cours')->count();
+            $activitesTerminees = Activite::where('statut', 'terminee')->count();
+
+            // ═══ GESTION (ADMIN / BUREAU) : agrégats globaux ═══
+            if ($user && in_array(strtoupper($user->role), ['ADMIN', 'BUREAU'])) {
+                $totalCotisations = CotisationMembre::count();
+                $totalPaye        = CotisationMembre::where('statut', 'paye')->count();
+                $totalNonPaye     = CotisationMembre::whereIn('statut', ['non_paye', 'reste'])->count();
+                $montantRestant   = (float) CotisationMembre::whereIn('statut', ['non_paye', 'reste'])
+                    ->sum('montant_restant');
+
+                $cotisations = [
+                    'total_cotisations' => $totalCotisations,
+                    'total_paye'        => $totalPaye,
+                    'total_non_paye'    => $totalNonPaye,
+                    'montant_restant'   => $montantRestant,
+                ];
+            } else {
+                // ═══ MEMBRE (NOVICE / MEMBER) : uniquement ses propres cotisations ═══
+                $cotisationsMembre = $user
+                    ? CotisationMembre::with('cotisation')->where('user_id', $user->id)->get()
+                    : collect();
+
+                $montantTotal = $cotisationsMembre->sum(function ($cm) use ($user) {
+                    if (!$cm->cotisation) return 0;
+                    return $user->role === 'NOVICE'
+                        ? $cm->cotisation->montant_novice
+                        : $cm->cotisation->montant_ancien;
+                });
+
+                $cotisations = [
+                    'total_cotisations' => $cotisationsMembre->count(),
+                    'total_paye'        => $cotisationsMembre->where('statut', 'paye')->count(),
+                    'total_non_paye'    => $cotisationsMembre->whereIn('statut', ['non_paye', 'reste'])->count(),
+                    'montant_total'     => round((float) $montantTotal, 2),
+                    'montant_restant'   => (float) $cotisationsMembre->whereIn('statut', ['non_paye', 'reste'])->sum('montant_restant'),
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'data'    => [
+                    'membres'     => [
+                        'bureau'  => $bureau,
+                        'membres' => $membres,
+                        'total'   => $total,
+                    ],
+                    'cotisations' => $cotisations,
+                    'activites'   => [
+                        'total'     => $totalActivites,
+                        'en_cours'  => $activitesEnCours,
+                        'terminees' => $activitesTerminees,
+                    ],
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du chargement des statistiques',
+            ], 500);
+        }
+    }
+
     public function index(): JsonResponse
     {
         $members = User::where('role', '!=', 'ADMIN')
@@ -211,20 +354,20 @@ class MemberController extends Controller
                 $newRole = $validated['role'];
                 $newSubRoles = $newRole === 'BUREAU' ? ($validated['subRoles'] ?? []) : [];
 
-                $oldRole    = $member->role;
-                $oldSubRole = json_decode($member->sub_role ?? '[]', true)[0] ?? null;
-                $newSubRole = $newSubRoles[0] ?? null;
-
-                if ($newRole !== $oldRole || $newSubRole !== $oldSubRole) {
-                    $newPermissions = RolePermission::findPermissions($newRole, $newSubRole);
-                    $member->setMeta('permissions', json_encode($newPermissions));
-                }
-
                 $updateData['role']     = $newRole;
                 $updateData['sub_role'] = json_encode($newSubRoles);
             }
 
             $member->update($updateData);
+
+            // Synchroniser le rôle dans les emails autorisés (un user = un seul rôle)
+            if (isset($validated['role'])) {
+                AuthorizedEmail::where('email', $member->email)->update(['role' => $validated['role']]);
+
+                // Recalibrer les cotisations non payées au tarif du nouveau rôle
+                $this->recalibrateCotisationAmounts($member, $validated['role']);
+            }
+
             $metas = [
                 'nom'           => $validated['nom'],
                 'prenom'        => $validated['prenom'],
@@ -234,8 +377,8 @@ class MemberController extends Controller
                 'niveau'        => $validated['niveau']        ?? '',
                 'promotion'     => $validated['promotion']     ?? '',
                 'logement'      => $validated['logement']      ?? '',
-                'bloc_campus'   => $validated['logement'] === 'campus' ? ($validated['blocCampus'] ?? '') : '',
-                'quartier'      => $validated['logement'] === 'ville'  ? ($validated['quartier'] ?? '') : '',
+                'bloc_campus'   => isset($validated['logement']) && $validated['logement'] === 'campus' ? ($validated['blocCampus'] ?? '') : '',
+                'quartier'      => $validated['quartier']      ?? '',
             ];
 
             foreach ($metas as $key => $value) {
@@ -248,7 +391,7 @@ class MemberController extends Controller
                 if (count($imageParts) === 2) {
                     $imageData = base64_decode($imageParts[1], true);
                     $publicId  = 'profile_' . $member->id;
-                    $avatarUrl = $this->uploadImageToCloudinary($imageData, $publicId);
+                    $avatarUrl = $this->uploadAvatarLocal($imageData, $publicId);
                     $member->update(['avatar' => $avatarUrl]);
                 }
             }

@@ -21,9 +21,14 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
-    Route::get('/user', [AuthController::class, 'user'])->middleware('auth:sanctum');
+    Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+    Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
+    Route::put('/me', [AuthController::class, 'updateMe'])->middleware('auth:sanctum');
     Route::post('/check-email-allowed', [AuthController::class, 'checkEmailAllowed']);
     Route::post('/create-password', [AuthController::class, 'createPassword']);
+    Route::post('/verify-code', [AuthController::class, 'verifyCode']);
+    Route::post('/check-verification', [AuthController::class, 'checkVerification']);
+    Route::post('/resend-code', [AuthController::class, 'resendCode']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
@@ -80,6 +85,7 @@ Route::prefix('data-register')->group(function () {
     Route::get('/promotions', [DataRegisterController::class, 'getPromotions']);
     Route::get('/types-logement', [DataRegisterController::class, 'getTypesLogement']);
     Route::get('/quartiers', [DataRegisterController::class, 'getQuartiers']);
+    Route::get('/villes', [DataRegisterController::class, 'getVilles']);
 });
 
 // Data Register Admin (CRUD - requires edit_membre or similar permission)
@@ -120,6 +126,10 @@ Route::middleware('auth:sanctum')->prefix('admin/data-register')->group(function
     Route::post('/quartiers', [DataRegisterController::class, 'storeQuartier'])->middleware('permission:create_membre');
     Route::put('/quartiers/{id}', [DataRegisterController::class, 'updateQuartier'])->middleware('permission:edit_membre');
     Route::delete('/quartiers/{id}', [DataRegisterController::class, 'deleteQuartier'])->middleware('permission:delete_membre');
+    // Villes
+    Route::post('/villes', [DataRegisterController::class, 'storeVille'])->middleware('permission:create_membre');
+    Route::put('/villes/{id}', [DataRegisterController::class, 'updateVille'])->middleware('permission:edit_membre');
+    Route::delete('/villes/{id}', [DataRegisterController::class, 'deleteVille'])->middleware('permission:delete_membre');
 });
 
 Route::middleware('auth:sanctum')->get('/dashboard-stats', [MemberController::class, 'dashboardStats']);
@@ -127,7 +137,6 @@ Route::middleware('auth:sanctum')->get('/dashboard-stats', [MemberController::cl
 // Notifications (polling)
 Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
     Route::get('/', [NotificationController::class, 'index']);
-    Route::get('/poll', [NotificationController::class, 'poll']);
     Route::post('/read-all', [NotificationController::class, 'readAll']);
     Route::post('/{id}/read', [NotificationController::class, 'markRead']);
     Route::post('/{id}/unread', [NotificationController::class, 'markUnread']);
@@ -135,14 +144,14 @@ Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
 });
 
 // Export
-Route::middleware('auth:sanctum')->get('/export/users', [ExportController::class, 'exportUsers']);
-Route::middleware('auth:sanctum')->get('/export/users/xlsx', [ExportController::class, 'exportUsersXlsx']);
+Route::middleware('auth:sanctum')->get('/export/users', [ExportController::class, 'exportUsers'])->middleware('permission:show_membre');
+Route::middleware('auth:sanctum')->get('/export/users/xlsx', [ExportController::class, 'exportUsersXlsx'])->middleware('permission:show_membre');
 
 //Permission
-Route::prefix('permissions')->group(function () {
-    Route::post('/add', [PermissionController::class, 'addPermission']);
-    Route::get('/get', [PermissionController::class, 'getRolePermissions']);
-    Route::post('/reset', [PermissionController::class, 'resetPermissions']);
+Route::middleware('auth:sanctum')->prefix('permissions')->group(function () {
+    Route::post('/add', [PermissionController::class, 'addPermission'])->middleware('permission:create_parametre');
+    Route::get('/get', [PermissionController::class, 'getRolePermissions'])->middleware('permission:show_parametre');
+    Route::post('/reset', [PermissionController::class, 'resetPermissions'])->middleware('permission:edit_parametre');
 });
 
 Route::prefix('accueil')->group(function () {

@@ -11,6 +11,7 @@ use App\Models\OptionCampus;
 use App\Models\SectionCampus;
 use App\Models\BlocCampus;
 use App\Models\Quartier;
+use App\Models\Ville;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -27,6 +28,7 @@ class DataRegisterController extends Controller
         $sectionsCampus = SectionCampus::with(['optionCampus.typeLogement', 'blocs'])->orderBy('nom')->get();
         $blocsCampus = BlocCampus::with(['sectionCampus.optionCampus.typeLogement'])->orderBy('nom')->get();
         $quartiers = Quartier::orderBy('nom')->get();
+        $villes = Ville::with('quartiers')->orderBy('nom')->get();
 
         return response()->json([
             'success' => true,
@@ -40,6 +42,7 @@ class DataRegisterController extends Controller
                 'sections_campus' => $sectionsCampus,
                 'blocs_campus' => $blocsCampus,
                 'quartiers' => $quartiers,
+                'villes' => $villes,
             ],
         ]);
     }
@@ -294,13 +297,16 @@ class DataRegisterController extends Controller
     {
         return response()->json([
             'success' => true,
-            'data' => Quartier::orderBy('nom')->get(),
+            'data' => Quartier::with('ville')->orderBy('nom')->get(),
         ]);
     }
 
     public function storeQuartier(Request $request)
     {
-        $validated = $request->validate(['nom' => 'required|string|max:255']);
+        $validated = $request->validate([
+            'nom' => 'required|string|max:255',
+            'ville_id' => 'nullable|exists:villes,id',
+        ]);
         $quartier = Quartier::create($validated);
         return response()->json(['success' => true, 'data' => $quartier], 201);
     }
@@ -308,7 +314,10 @@ class DataRegisterController extends Controller
     public function updateQuartier(Request $request, $id)
     {
         $quartier = Quartier::findOrFail($id);
-        $validated = $request->validate(['nom' => 'required|string|max:255']);
+        $validated = $request->validate([
+            'nom' => 'required|string|max:255',
+            'ville_id' => 'nullable|exists:villes,id',
+        ]);
         $quartier->update($validated);
         return response()->json(['success' => true, 'data' => $quartier]);
     }
@@ -316,6 +325,37 @@ class DataRegisterController extends Controller
     public function deleteQuartier($id)
     {
         Quartier::findOrFail($id)->delete();
+        return response()->json(['success' => true, 'message' => 'Supprimé']);
+    }
+
+    // ─── Villes ────────────────────────────────────────────────
+
+    public function getVilles()
+    {
+        return response()->json([
+            'success' => true,
+            'data' => Ville::with('quartiers')->orderBy('nom')->get(),
+        ]);
+    }
+
+    public function storeVille(Request $request)
+    {
+        $validated = $request->validate(['nom' => 'required|string|max:255']);
+        $ville = Ville::create($validated);
+        return response()->json(['success' => true, 'data' => $ville], 201);
+    }
+
+    public function updateVille(Request $request, $id)
+    {
+        $ville = Ville::findOrFail($id);
+        $validated = $request->validate(['nom' => 'required|string|max:255']);
+        $ville->update($validated);
+        return response()->json(['success' => true, 'data' => $ville]);
+    }
+
+    public function deleteVille($id)
+    {
+        Ville::findOrFail($id)->delete();
         return response()->json(['success' => true, 'message' => 'Supprimé']);
     }
 }

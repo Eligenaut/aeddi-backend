@@ -6,9 +6,8 @@ use App\Models\Activite;
 use App\Models\User;
 use App\Models\UserNotification;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cache;
-use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
+use App\Helpers\ImageStorage;
 
 class ActiviteController extends Controller
 {
@@ -26,36 +25,12 @@ class ActiviteController extends Controller
 
     private function uploadImage($file, string $dossier): string
     {
-        \Cloudinary\Configuration\Configuration::instance([
-            'cloud' => [
-                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-                'api_key'    => env('CLOUDINARY_API_KEY'),
-                'api_secret' => env('CLOUDINARY_API_SECRET'),
-            ],
-            'url' => ['secure' => true],
-        ]);
-
-        $api = new \Cloudinary\Api\Upload\UploadApi();
-        $result = $api->upload($file->getRealPath(), [
-            'folder' => 'aeddi/' . $dossier,
-        ]);
-
-        return $result['secure_url'];
+        return ImageStorage::store($file, $dossier);
     }
 
     private function deleteImage(?string $path): void
     {
-        if ($path) {
-            if (str_starts_with($path, 'http') && str_contains($path, 'cloudinary')) {
-                preg_match('/\/aeddi\/.*\/([^.]+)/', $path, $matches);
-                if (!empty($matches[0])) {
-                    $publicId = ltrim($matches[0], '/');
-                    Cloudinary::destroy($publicId);
-                }
-            } else {
-                Storage::disk('public')->delete($path);
-            }
-        }
+        ImageStorage::delete($path);
     }
 
     // ─── Helper format réponse ────────────────────────────────

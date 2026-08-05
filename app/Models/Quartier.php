@@ -6,5 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class Quartier extends Model
 {
-    protected $fillable = ['nom'];
+    protected $fillable = ['nom', 'ville_id'];
+
+    public function ville()
+    {
+        return $this->belongsTo(Ville::class);
+    }
 }
